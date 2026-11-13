@@ -91,6 +91,8 @@ func TestExtractCPF(t *testing.T) {
 		{q: "MARIA***456789**"},
 		{q: "maria12345678901"},
 		{q: "maria 123.456.789-09 e 123.456.789-09", frag: "456789", rest: "maria   e  ", ok: true}, // same CPF twice
+		{q: "123.456.789-09 ***456789**", frag: "456789", rest: "   ", ok: true},                    // full and masked agree
+		{q: "***456789** maria ***.456.789-**", frag: "456789", rest: "  maria  ", ok: true},
 		// Not a CPF: CNPJ lookups, short numbers, names.
 		{q: "456789"},
 		{q: "12345678"},
@@ -113,6 +115,8 @@ func TestExtractCPF(t *testing.T) {
 		{q: "123.456.789-09 111.222.333-96", err: search.ErrMultipleCPFs},
 		{q: "maria ***456789** 111.222.333-96", err: search.ErrMultipleCPFs},
 		{q: "***456789** ***111222**", err: search.ErrMultipleCPFs},
+		{q: "123.456.789-09 " + punct(withDV("000456789")), err: search.ErrMultipleCPFs}, // same fragment, two CPFs
+		{q: "111.222.333-96 ***456789**", err: search.ErrMultipleCPFs},
 	}
 	for _, c := range cases {
 		frag, rest, ok, err := search.ExtractCPF(c.q)
@@ -254,7 +258,7 @@ func TestCPFFragmentWithWords(t *testing.T) {
 		"maria 99999 123.456.789-09":    {maria},             // a dropped long number at the end: "maria" matches whole
 		"de da 123.456.789-09":          {maria, mariana, 0}, // only stopwords: the fragment alone
 	}
-	all := ids(f.find(s, "123.456.789-09", "", 20).Items)
+	all := ids(f.find(s, "123.456.789-09", claims.KindPerson, 20).Items)
 	if len(all) != 3 {
 		t.Fatalf("fragment alone: %v", all)
 	}
@@ -262,7 +266,9 @@ func TestCPFFragmentWithWords(t *testing.T) {
 		if slices.Contains(want, 0) {
 			want = all
 		}
-		r := f.find(s, q, "", 20)
+		// kind person: the intersection alone (with no kind, companies found
+		// by the words follow; see TestCPFWithWordsKeepsCompaniesByName).
+		r := f.find(s, q, claims.KindPerson, 20)
 		got := ids(r.Items)
 		sort.Slice(got, func(i, j int) bool { return got[i] < got[j] })
 		w := slices.Clone(want)
@@ -359,18 +365,135 @@ func TestCPFFragmentSharedByManyPersons(t *testing.T) {
 // fragment is, whatever its name.
 func TestNameWithCPFIsNotFoundByIt(t *testing.T) {
 	f := setup(t)
-	f.entity(claims.KindCompany, "30000004", "JOANA FICTICIA 12345678909")
-	f.entity(claims.KindCompany, "30000005", "JOANA FICTICIA 123.456.789-09 ME")
+	c1 := f.entity(claims.KindCompany, "30000004", "JOANA FICTICIA 12345678909")
+	c2 := f.entity(claims.KindCompany, "30000005", "JOANA FICTICIA 123.456.789-09 ME")
 	f.person("JOANA FICTICIA 123.456.789-09") // no fragment
 	f.person("JOANA FICTICIA", "111222")      // other fragment
 	s := search.New(f.pool)
 	f.rebuild(s)
-	for _, q := range []string{"12345678909", "joana ficticia 12345678909", "JOANA FICTICIA 123.456.789-09 ME", "joana ***456789**"} {
-		if r := f.find(s, q, "", 50); len(r.Items) != 0 {
-			t.Errorf("Find(%q) = %+v, want nothing", q, r.Items)
+	for _, q := range []string{"12345678909", "joana ***456789**", "joana ficticia 12345678909"} {
+		if r := f.find(s, q, claims.KindPerson, 50); len(r.Items) != 0 {
+			t.Errorf("Find(%q, person) = %+v, want nothing", q, r.Items)
+		}
+	}
+	if r := f.find(s, "12345678909", "", 50); len(r.Items) != 0 {
+		t.Errorf("CPF alone: %+v", r.Items)
+	}
+	// With no kind, companies come from the words only: the same whatever
+	// (valid) CPF is typed, so the CPF in their names is never confirmed.
+	other := punct(withDV("987654321"))
+	for _, words := range []string{"joana ficticia", "JOANA FICTICIA ME"} {
+		a := f.find(s, words+" 123.456.789-09", "", 50)
+		b := f.find(s, words+" "+other, "", 50)
+		if a.FragmentHits != 0 || !slices.Equal(ids(a.Items), ids(b.Items)) {
+			t.Errorf("%q: %v (fragment hits %d) vs other CPF %v", words, ids(a.Items), a.FragmentHits, ids(b.Items))
+		}
+		got := ids(a.Items)
+		sort.Slice(got, func(i, j int) bool { return got[i] < got[j] })
+		if !slices.Equal(got, []int64{c1, c2}) {
+			t.Errorf("%q: %v, want the companies %d, %d", words, got, c1, c2)
 		}
 	}
 	if got := f.find(s, "joana ficticia", "", 50).Items; len(got) != 4 {
 		t.Errorf("by its words: %+v", got)
+	}
+}
+
+// TestCPFWithWordsKeepsCompaniesByName: a displayed company name with a
+// masked CPF, pasted back, lists the person candidates first and then the
+// companies its words find (m5).
+func TestCPFWithWordsKeepsCompaniesByName(t *testing.T) {
+	f := setup(t)
+	co := f.entity(claims.KindCompany, "30000006", "JOAO DA SILVA FICTICIO 12345678909")
+	p := f.person("JOAO DA SILVA FICTICIO", "456789")
+	f.person("JOAO DA SILVA FICTICIO", "222333")
+	s := search.New(f.pool)
+	f.rebuild(s)
+	r := f.find(s, "JOAO DA SILVA FICTICIO ***456789**", "", 20)
+	if !r.CPFFragment || r.FragmentHits != 1 || !slices.Equal(ids(r.Items), []int64{p, co}) {
+		t.Errorf("no kind: %+v", r)
+	}
+	if r := f.find(s, "JOAO DA SILVA FICTICIO ***456789**", claims.KindPerson, 20); !slices.Equal(ids(r.Items), []int64{p}) {
+		t.Errorf("person: %v", ids(r.Items))
+	}
+	if r := f.find(s, "JOAO DA SILVA FICTICIO ***456789**", claims.KindCompany, 20); len(r.Items) != 0 {
+		t.Errorf("company: %v", ids(r.Items))
+	}
+	// Limit: the candidates first.
+	if r := f.find(s, "joao silva ***456789**", "", 1); !slices.Equal(ids(r.Items), []int64{p}) || r.FragmentHits != 1 {
+		t.Errorf("limit 1: %+v", r)
+	}
+}
+
+// TestCPFFragmentAboveCap: a fragment with more records than the cap is not
+// listed alone (flagged); with name words it is searched from the name side.
+func TestCPFFragmentAboveCap(t *testing.T) {
+	f := setup(t)
+	hub := f.entity(claims.KindCompany, "30000007", "CENTRO FICTICIO")
+	var many []int64
+	for i := range 8 {
+		many = append(many, f.person(fmt.Sprintf("PESSOA COMUM %c", 'A'+i), "456789"))
+	}
+	target := f.person("ROSA FICTICIA", "456789")
+	f.person("ROSA FICTICIA", "222333")
+	rare := f.person("RUI FICTICIO", "222333")
+	f.link(many[3], hub, 2)
+	s := search.New(f.pool)
+	s.SetFragmentCap(5)
+	f.rebuild(s)
+
+	r := f.find(s, "123.456.789-09", "", 20)
+	if !r.CPFFragment || !r.FragmentTooCommon || len(r.Items) != 0 {
+		t.Errorf("alone: %+v", r)
+	}
+	r = f.find(s, "rosa 123.456.789-09", claims.KindPerson, 20)
+	if r.FragmentTooCommon || !slices.Equal(ids(r.Items), []int64{target}) || r.FragmentHits != 1 {
+		t.Errorf("rosa: %+v", r)
+	}
+	// Name side, rank order: the linked one first.
+	r = f.find(s, "pessoa comum ***456789**", claims.KindPerson, 3)
+	if got := ids(r.Items); len(got) != 3 || got[0] != many[3] {
+		t.Errorf("pessoa comum: %v", got)
+	}
+	// Too-short words do not unlock it.
+	if r := f.find(s, "de 123.456.789-09", "", 20); !r.FragmentTooCommon || len(r.Items) != 0 {
+		t.Errorf("stopword only: %+v", r)
+	}
+	// A fragment under the cap is listed as usual.
+	if r := f.find(s, "111.222.333-96", "", 20); r.FragmentTooCommon || len(r.Items) != 2 {
+		t.Errorf("222333: %+v (rare %d)", r, rare)
+	}
+}
+
+// TestCPFFragmentAfterMerge: an entity emptied by a merge (its records moved
+// to another) is not a candidate; the receiving entity is listed once.
+func TestCPFFragmentAfterMerge(t *testing.T) {
+	f := setup(t)
+	a := f.person("MARTA FICTICIA", "456789")
+	b := f.person("MARTA FICTICIA", "456789")
+	if _, err := f.pool.Exec(ctx, `UPDATE person_record SET entity_id = $1 WHERE entity_id = $2`, b, a); err != nil {
+		t.Fatal(err)
+	}
+	s := search.New(f.pool)
+	f.rebuild(s)
+	if r := f.find(s, "123.456.789-09", "", 20); !slices.Equal(ids(r.Items), []int64{b}) {
+		t.Errorf("got %v, want only %d", ids(r.Items), b)
+	}
+}
+
+// TestCPFInCompatibilityDigits: fullwidth digits and punctuation are a CPF
+// too (never left as words).
+func TestCPFInCompatibilityDigits(t *testing.T) {
+	f := setup(t)
+	p := f.person("MARIA FICTICIA", "456789")
+	s := search.New(f.pool)
+	f.rebuild(s)
+	for _, q := range []string{"１２３.４５６.７８９-０９", "maria １２３４５６７８９０９", "＊＊＊４５６７８９＊＊"} {
+		if r := f.find(s, q, claims.KindPerson, 20); !r.CPFFragment || !slices.Equal(ids(r.Items), []int64{p}) {
+			t.Errorf("Find(%q) = %+v", q, r)
+		}
+	}
+	if _, err := s.Find(ctx, "１２３.４５６.７８９-０１", "", 20); !errors.Is(err, search.ErrInvalidCPF) {
+		t.Errorf("fullwidth invalid: %v", err)
 	}
 }

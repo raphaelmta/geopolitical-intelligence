@@ -497,7 +497,7 @@ func TestCPFQueryNeverMatchesNames(t *testing.T) {
 	f.entity(claims.KindPerson, "", "12345678909")
 	s := search.New(f.pool)
 	f.rebuild(s)
-	for _, q := range []string{"12345678909", "123.456.789-09", "123456789", "1234567890123", "JOANA FICTICIA 12345678909"} {
+	for _, q := range []string{"12345678909", "123.456.789-09", "123456789", "1234567890123"} {
 		got, err := s.Query(ctx, q, "", 20)
 		if err != nil || len(got) != 0 {
 			t.Errorf("Query(%q) = %+v, %v; want nothing", q, got, err)
@@ -507,6 +507,10 @@ func TestCPFQueryNeverMatchesNames(t *testing.T) {
 		if _, err := s.Query(ctx, q, "", 20); !errors.Is(err, search.ErrInvalidCPF) {
 			t.Errorf("Query(%q): %v, want ErrInvalidCPF", q, err)
 		}
+	}
+	// With words, the company is found by them alone, never by the CPF.
+	if got, err := s.Query(ctx, "JOANA FICTICIA 12345678909", claims.KindPerson, 20); err != nil || len(got) != 0 {
+		t.Errorf("person: %+v, %v", got, err)
 	}
 	got, err := s.Query(ctx, "JOANA FICTICIA", "", 20)
 	if err != nil || len(got) != 1 {
@@ -1207,7 +1211,7 @@ func TestCPFNeverConfirmedByWords(t *testing.T) {
 // TestNameWithLongNumberIsNotFoundByTypingItWhole: the exact tier is skipped
 // for a query with 9 or more digits, so the complete name returns what its
 // digit-free words return; a complete name carrying a CPF is a CPF search,
-// which finds no company.
+// whose companies come from the same digit-free words.
 func TestNameWithLongNumberIsNotFoundByTypingItWhole(t *testing.T) {
 	f := setup(t)
 	f.entity(claims.KindCompany, "90020001", "JOAO 1234567890 ME")
@@ -1225,9 +1229,11 @@ func TestNameWithLongNumberIsNotFoundByTypingItWhole(t *testing.T) {
 			t.Errorf("Query(%q) = %v, want the same as \"joao me\" %v", q, got, want)
 		}
 	}
+	// A whole name with a CPF is a CPF search: no person has the fragment,
+	// and the companies come from the other words only (the same list).
 	for _, q := range []string{"JOAO 12345678909 ME", "joao 123.456.789-09 me"} {
-		if got := f.query(s, q, "", 50); len(got) != 0 {
-			t.Errorf("Query(%q) = %v, want nothing (a CPF search)", q, got)
+		if got := ids(f.query(s, q, "", 50)); !slices.Equal(got, want) {
+			t.Errorf("Query(%q) = %v, want the same as \"joao me\" %v", q, got, want)
 		}
 	}
 }

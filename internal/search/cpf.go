@@ -36,10 +36,16 @@ type cpfInQuery struct {
 //
 // in both cases standing apart, not glued to a letter or digit (see glued).
 //
-// A full CPF must have valid check digits (ErrInvalidCPF). Two different CPFs
-// are ErrMultipleCPFs; the same one twice counts once. ok is false when the
-// query carries no CPF; then it goes through the name and CNPJ rules as
-// before. A bare 6-digit number is never a CPF (it is a CNPJ prefix).
+// A full CPF must have valid check digits (ErrInvalidCPF). The same CPF given
+// more than once — repeated, or in full and masked — is one CPF: spellings
+// agree when their fragments agree and, for full ones, all 11 digits agree.
+// Anything else is ErrMultipleCPFs. ok is false when the query carries no
+// CPF; then it goes through the name and CNPJ rules as before. A bare 6-digit
+// number is never a CPF (it is a CNPJ prefix), but any other number of 11
+// digits is read as one (a phone number, a PIS: usually invalid_cpf).
+//
+// q is expected NFKC-normalized (Find does it), so fullwidth or other
+// compatibility digits count as digits.
 func extractCPF(q string) (cpfInQuery, bool, error) {
 	if d, numeric := numericQuery(q); numeric && len(d) == 11 {
 		if !validCPF(d) {
@@ -47,16 +53,17 @@ func extractCPF(q string) (cpfInQuery, bool, error) {
 		}
 		return cpfInQuery{fragment: d[3:9]}, true, nil
 	}
-	var found []string // distinct spellings, as digits (full) or "*" + fragment
-	var frag string
+	var frags, fulls []string // distinct fragments; distinct full CPFs
 	var rest strings.Builder
 	invalid := false
+	add := func(list *[]string, v string) {
+		if !slices.Contains(*list, v) {
+			*list = append(*list, v)
+		}
+	}
 	for i := 0; i < len(q); {
 		if n, f := maskedCPFAt(q, i); n > 0 && !glued(q, i, n) {
-			if key := "*" + f; !slices.Contains(found, key) {
-				found = append(found, key)
-			}
-			frag = f
+			add(&frags, f)
 			rest.WriteByte(' ')
 			i += n
 			continue
@@ -65,10 +72,9 @@ func extractCPF(q string) (cpfInQuery, bool, error) {
 			d := digitsOf(q[i : i+n])
 			if !validCPF(d) {
 				invalid = true
-			} else if !slices.Contains(found, d) {
-				found = append(found, d)
 			}
-			frag = d[3:9]
+			add(&fulls, d)
+			add(&frags, d[3:9])
 			rest.WriteByte(' ')
 			i += n
 			continue
@@ -79,12 +85,12 @@ func extractCPF(q string) (cpfInQuery, bool, error) {
 	switch {
 	case invalid:
 		return cpfInQuery{}, false, ErrInvalidCPF
-	case len(found) == 0:
+	case len(frags) == 0:
 		return cpfInQuery{}, false, nil
-	case len(found) > 1:
+	case len(frags) > 1 || len(fulls) > 1:
 		return cpfInQuery{}, false, ErrMultipleCPFs
 	}
-	return cpfInQuery{fragment: frag, rest: rest.String()}, true, nil
+	return cpfInQuery{fragment: frags[0], rest: rest.String()}, true, nil
 }
 
 // maskedCPFAt returns the length of the masked CPF starting at i and its

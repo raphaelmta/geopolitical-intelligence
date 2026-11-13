@@ -29,12 +29,15 @@ type searchItemJSON struct {
 type searchJSON struct {
 	Items             []searchItemJSON `json:"items"`
 	CPFFragmentSearch bool             `json:"cpf_fragment_search,omitempty"`
+	// CPFFragmentTooCommon: the fragment is in too many records to be listed
+	// alone; adding name words narrows it.
+	CPFFragmentTooCommon bool `json:"cpf_fragment_too_common,omitempty"`
 }
 
 // search: GET /api/v1/search?q=&kind=&limit=. The text is never logged nor
 // audited: the audit row holds only the kind, the number of results and,
-// for a query carrying a CPF, the flag cpf_fragment_search (never the CPF
-// or its fragment). The CPF is not echoed back either.
+// for a query carrying a CPF, the flags cpf_fragment_search and
+// cpf_fragment_too_common (never the CPF or its fragment). The CPF is not echoed back either.
 func (s *server) search(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	text := q.Get("q")
@@ -58,17 +61,23 @@ func (s *server) search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	detail := map[string]any{"kind": string(kind), "count": len(res.Items)}
-	match := ""
 	if res.CPFFragment {
 		detail["cpf_fragment_search"] = true
-		match = "cpf_fragment"
+	}
+	if res.FragmentTooCommon {
+		detail["cpf_fragment_too_common"] = true
 	}
 	if !s.audited(w, r, "search", nil, detail) {
 		return
 	}
-	out := searchJSON{Items: make([]searchItemJSON, len(res.Items)), CPFFragmentSearch: res.CPFFragment}
+	out := searchJSON{Items: make([]searchItemJSON, len(res.Items)), CPFFragmentSearch: res.CPFFragment,
+		CPFFragmentTooCommon: res.FragmentTooCommon}
 	for i, ref := range res.Items {
-		out.Items[i] = searchItemJSON{entityJSON: toEntity(ref), Match: match}
+		out.Items[i] = searchItemJSON{entityJSON: toEntity(ref)}
+		if i < res.FragmentHits {
+			// The others (companies by the name words) were not matched by the CPF.
+			out.Items[i].Match = "cpf_fragment"
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }

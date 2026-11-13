@@ -82,6 +82,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	unorm "golang.org/x/text/unicode/norm"
 
 	"geoint/internal/claims"
 	"geoint/internal/graph"
@@ -201,6 +202,7 @@ func tierQuery(tables []searchTable, code string, exact bool) string {
 type Service struct {
 	pool              *pgxpool.Pool
 	frequentThreshold int64
+	fragmentCap       int
 	checkEvery        time.Duration
 	swapLockTimeout   time.Duration
 	swapAttempts      int
@@ -220,7 +222,7 @@ type Service struct {
 
 // New returns a Service on the pool.
 func New(p *pgxpool.Pool) *Service {
-	return &Service{pool: p, frequentThreshold: DefaultFrequentThreshold, checkEvery: generationCheckEvery,
+	return &Service{pool: p, frequentThreshold: DefaultFrequentThreshold, fragmentCap: DefaultFragmentCap, checkEvery: generationCheckEvery,
 		swapLockTimeout: defaultSwapLockTimeout, swapAttempts: defaultSwapAttempts, swapBackoff: defaultSwapBackoff}
 }
 
@@ -232,7 +234,28 @@ type Result struct {
 	// is then a candidate (a person whose fragment matches), never a
 	// confirmed holder of that CPF.
 	CPFFragment bool
+	// FragmentHits: the first FragmentHits items are those candidates; the
+	// items after them (a CPF query with name words and no kind) are
+	// companies found by the words alone, as in name search — the CPF is
+	// never used for them.
+	FragmentHits int
+	// FragmentTooCommon: the fragment has more than the cap's records
+	// (DefaultFragmentCap) and the query has no name words to narrow it, so
+	// nothing is listed.
+	FragmentTooCommon bool
 }
+
+// DefaultFragmentCap bounds a CPF search started from the fragment: a
+// fragment with more records than this (fillers such as 000000-like values
+// the sources use; on the national base the median is 24 records and the 99th
+// percentile 109, but a few fragments have thousands and one 465,539) is not
+// listed. With name words, such a fragment is searched from the name side.
+const DefaultFragmentCap = 2000
+
+// SetFragmentCap sets the most records a CPF fragment may have to be listed
+// from the fragment side (DefaultFragmentCap unless changed). Call it before
+// the Service is shared.
+func (s *Service) SetFragmentCap(n int) { s.fragmentCap = n }
 
 // Query is Find returning only the items.
 func (s *Service) Query(ctx context.Context, q string, kind claims.EntityKind, limit int) ([]graph.EntityRef, error) {
@@ -264,7 +287,9 @@ func (s *Service) Find(ctx context.Context, q string, kind claims.EntityKind, li
 	limit = min(limit, maxLimit)
 	// PostgreSQL text holds neither NUL nor invalid UTF-8.
 	q = strings.ReplaceAll(strings.ToValidUTF8(q, ""), "\x00", "")
-	cpf, isCPF, err := extractCPF(q)
+	// Compatibility forms (fullwidth digits, asterisks and punctuation) are
+	// folded before looking for a CPF, so it never escapes as "a word".
+	cpf, isCPF, err := extractCPF(unorm.NFKC.String(q))
 	if err != nil {
 		return Result{}, err
 	}
@@ -315,25 +340,35 @@ func (s *Service) byName(ctx context.Context, q string, sql tierSQL, kind claims
 	}
 	tsq := tsQuery(kept, lastSearched, frequent)
 
-	var out []graph.EntityRef
+	out, err := nameTiers(ctx, tx, nil, sql, *norm, tsq, limit)
+	if err != nil {
+		return nil, err
+	}
+	return out, commit(ctx, tx)
+}
+
+// nameTiers appends to out the two name tiers for the normalized query norm
+// and its tsquery, up to limit items in all.
+func nameTiers(ctx context.Context, tx pgx.Tx, out []graph.EntityRef, sql tierSQL, norm, tsq string, limit int) ([]graph.EntityRef, error) {
+	var err error
 	// A query with a CPF in it, or with 9 or more digits in total, is not
 	// looked up by its exact form, so the exact tier never confirms digits
 	// that go with a name (such names have no searchable digit words
 	// either): the word tier alone answers it, excluding nothing ("" equals
 	// no normalized name).
 	exclude := ""
-	if !hasCPF(*norm) && countDigits(*norm) < longNumberDigits {
-		if out, err = collect(ctx, tx, out, sql.exact, *norm, limit); err != nil {
+	if !hasCPF(norm) && countDigits(norm) < longNumberDigits {
+		if out, err = collect(ctx, tx, out, sql.exact, norm, limit-len(out)); err != nil {
 			return nil, fmt.Errorf("search: exact names: %w", err)
 		}
-		exclude = *norm
+		exclude = norm
 	}
 	if len(out) < limit && tsq != "" {
 		if out, err = collect(ctx, tx, out, sql.words, tsq, exclude, limit-len(out)); err != nil {
 			return nil, fmt.Errorf("search: words: %w", err)
 		}
 	}
-	return out, commit(ctx, tx)
+	return out, nil
 }
 
 // words normalizes q and returns its searched words. They come from
@@ -356,10 +391,11 @@ func words(ctx context.Context, tx pgx.Tx, q string) (norm *string, kept []strin
 
 // fragmentSQL answers a CPF-fragment search (Find). It starts from the
 // fragment's records through person_record_cpf_fragment_entity (migration
-// 0022): a fragment is shared by tens of persons, a few hundred at worst, so
-// the candidate set is small and everything else is computed on it — never
-// the ranked name search filtered afterwards. $1 = fragment, $2 = tsquery of
-// the other words (” for none), $3 = limit.
+// 0022): a fragment below the cap is shared by tens of persons (median 24
+// records on the national base), so the candidate set is small and
+// everything else is computed on it — never the ranked name search filtered
+// afterwards. $1 = fragment, $2 = tsquery of the other words (empty for
+// none), $3 = limit.
 //
 // Same order as the name tiers (search_rank): degree DESC, normalized name
 // (byte order), id. The degree is counted here, from the live relationships,
@@ -386,22 +422,42 @@ const fragmentSQL = `WITH c AS (
 	ORDER BY d.grau DESC, m.name_norm, m.id
 	LIMIT $3`
 
+// fragmentProbeSQL counts a fragment's records, stopping at $2 (the cap + 1):
+// a bounded index-only probe, whatever the fragment.
+const fragmentProbeSQL = `SELECT count(*) FROM (SELECT 1 FROM person_record
+	WHERE cpf_fragment = $1 AND cpf_fragment <> '' AND entity_id IS NOT NULL LIMIT $2) x`
+
+// fragmentByNameSQL answers a CPF search with name words on a fragment above
+// the cap: from the name side (the word tier of search_person, in
+// search_rank order, relying on the physical order like the word tier), each
+// candidate checked for a record with the fragment through the same index
+// (entity_id is in it). $1 = tsquery, $2 = fragment, $3 = limit.
+const fragmentByNameSQL = `SELECT e.id, e.kind, e.name, coalesce(e.natural_key, '')
+	FROM (SELECT search_rank, entity_id FROM search_person sp
+		WHERE tokens @@ $1::tsquery
+			AND EXISTS (SELECT 1 FROM person_record pr
+				WHERE pr.cpf_fragment = $2 AND pr.cpf_fragment <> '' AND pr.entity_id = sp.entity_id)
+		LIMIT $3) r
+	JOIN entity e ON e.id = r.entity_id
+	ORDER BY r.search_rank`
+
 // byFragment is the CPF-fragment search: the other words of the query, if
 // any, restrict the candidates (an intersection, never a ranking). Words
 // that the rules drop (stopwords, digits) leave the fragment alone.
 func (s *Service) byFragment(ctx context.Context, cpf cpfInQuery, kind claims.EntityKind, limit int) (Result, error) {
+	res := Result{CPFFragment: true}
 	if kind != "" && kind != claims.KindPerson {
 		// Only persons have CPF fragments.
-		return Result{CPFFragment: true}, nil
+		return res, nil
 	}
 	tx, err := s.begin(ctx)
 	if err != nil {
 		return Result{}, err
 	}
 	defer rollback(ctx, tx)
-	tsq := ""
+	tsq, norm, useful := "", "", 0
 	if strings.TrimSpace(cpf.rest) != "" {
-		_, kept, lastSearched, err := words(ctx, tx, cpf.rest)
+		n, kept, lastSearched, err := words(ctx, tx, cpf.rest)
 		if err != nil {
 			return Result{}, err
 		}
@@ -412,12 +468,37 @@ func (s *Service) byFragment(ctx context.Context, cpf cpfInQuery, kind claims.En
 			}
 			tsq = tsQuery(kept, lastSearched, frequent)
 		}
+		for _, w := range kept {
+			useful += len(w)
+		}
+		if n != nil {
+			norm = *n
+		}
 	}
-	out, err := collect(ctx, tx, nil, fragmentSQL, cpf.fragment, tsq, limit)
+	var records int
+	if err := tx.QueryRow(ctx, fragmentProbeSQL, cpf.fragment, s.fragmentCap+1).Scan(&records); err != nil {
+		return Result{}, fmt.Errorf("search: cpf fragment probe: %w", err)
+	}
+	switch {
+	case records <= s.fragmentCap:
+		res.Items, err = collect(ctx, tx, nil, fragmentSQL, cpf.fragment, tsq, limit)
+	case tsq != "" && useful >= minUseful:
+		res.Items, err = collect(ctx, tx, nil, fragmentByNameSQL, tsq, cpf.fragment, limit)
+	default:
+		res.FragmentTooCommon = true
+	}
 	if err != nil {
 		return Result{}, fmt.Errorf("search: cpf fragment: %w", err)
 	}
-	return Result{Items: out, CPFFragment: true}, commit(ctx, tx)
+	res.FragmentHits = len(res.Items)
+	// No kind and name words: companies are searched by the words alone (a
+	// pasted company name that shows a masked CPF still finds the company).
+	if kind == "" && tsq != "" && useful >= minUseful && len(res.Items) < limit {
+		if res.Items, err = nameTiers(ctx, tx, res.Items, tiers[claims.KindCompany], norm, tsq, limit); err != nil {
+			return Result{}, err
+		}
+	}
+	return res, commit(ctx, tx)
 }
 
 // rollback ends a read-only transaction that was not committed (after a

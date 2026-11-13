@@ -6,7 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"geoint/internal/api"
 	"geoint/internal/graph/graphtest"
+	"geoint/internal/search"
 )
 
 // Synthetic CPFs only: 123.456.789-09 and 111.222.333-96 have valid check
@@ -20,8 +22,9 @@ type searchHit struct {
 }
 
 type searchBody struct {
-	Items             []searchHit `json:"items"`
-	CPFFragmentSearch *bool       `json:"cpf_fragment_search"`
+	Items                []searchHit `json:"items"`
+	CPFFragmentSearch    *bool       `json:"cpf_fragment_search"`
+	CPFFragmentTooCommon *bool       `json:"cpf_fragment_too_common"`
 }
 
 func TestSearchByCPFFragment(t *testing.T) {
@@ -71,6 +74,11 @@ func TestSearchByCPFFragment(t *testing.T) {
 	got, raw := get("maria 123.456.789-09", "")
 	if len(got.Items) != 1 || got.Items[0].ID != maria || got.Items[0].Match != "cpf_fragment" {
 		t.Errorf("maria + cpf: %s", raw)
+	}
+	// No kind and words: the companies those words find follow, unmarked.
+	got, raw = get("empresa ficticia 123.456.789-09", "")
+	if len(got.Items) != 1 || got.Items[0].Kind != "company" || got.Items[0].Match != "" || got.CPFFragmentSearch == nil {
+		t.Errorf("company by words: %s", raw)
 	}
 	// Scope company: nothing, still flagged.
 	got, raw = get("123.456.789-09", "company")
@@ -123,5 +131,29 @@ func TestSearchByCPFAuditHasNoCPF(t *testing.T) {
 		if strings.Contains(raw, s) {
 			t.Errorf("audit detail %s holds %q", raw, s)
 		}
+	}
+}
+
+func TestSearchCPFFragmentTooCommon(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, false, func(d *api.Deps) {
+		svc := search.New(d.Pool)
+		svc.SetFragmentCap(2)
+		d.Search = svc
+	})
+	b, rc := graphtest.FreshReceita(t, e.pool)
+	for i, name := range []string{"ANA FICTICIA", "BIA FICTICIA", "CEL FICTICIA"} {
+		b.Person(rc, "7100000"+string(rune('1'+i)), name, "456789")
+	}
+	e.rebuildSearch()
+	rec := e.do("GET", "/api/v1/search?q="+url.QueryEscape("123.456.789-09"), tokAnalyst, "")
+	raw := rec.Body.String()
+	got := want[searchBody](t, rec, http.StatusOK)
+	if len(got.Items) != 0 || got.CPFFragmentTooCommon == nil || !*got.CPFFragmentTooCommon || strings.Contains(raw, "456789") {
+		t.Errorf("alone: %s", raw)
+	}
+	got = want[searchBody](t, e.do("GET", "/api/v1/search?q="+url.QueryEscape("bia 123.456.789-09"), tokAnalyst, ""), http.StatusOK)
+	if len(got.Items) != 1 || got.Items[0].Name != "BIA FICTICIA" || got.Items[0].Match != "cpf_fragment" || got.CPFFragmentTooCommon != nil {
+		t.Errorf("with a name: %+v", got)
 	}
 }
