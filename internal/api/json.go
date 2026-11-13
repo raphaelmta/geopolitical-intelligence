@@ -108,6 +108,10 @@ func classify(err error) (int, string) {
 		return http.StatusRequestEntityTooLarge, "body_too_large"
 	case errors.Is(err, search.ErrQueryTooShort):
 		return http.StatusBadRequest, "query_too_short"
+	case errors.Is(err, search.ErrInvalidCPF):
+		return http.StatusBadRequest, "invalid_cpf"
+	case errors.Is(err, search.ErrMultipleCPFs):
+		return http.StatusBadRequest, "multiple_cpfs"
 	case errors.Is(err, errBadRequest), errors.Is(err, graph.ErrBadCursor), errors.Is(err, graph.ErrBadOptions),
 		errors.Is(err, search.ErrBadKind), errors.Is(err, jobs.ErrUnknownType), errors.Is(err, jobs.ErrBadParams),
 		errors.Is(err, identity.ErrTooFewRecords):

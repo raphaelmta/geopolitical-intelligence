@@ -26,3 +26,17 @@ func (s *Service) SetBeforeSwap(f func(attempt int)) { s.beforeSwap = f }
 func (s *Service) SetSwapRetry(lockTimeout time.Duration, attempts int, backoff time.Duration) {
 	s.swapLockTimeout, s.swapAttempts, s.swapBackoff = lockTimeout, attempts, backoff
 }
+
+// ExtractCPF exposes extractCPF: the fragment, the rest of the query and
+// whether the query carries a CPF.
+func ExtractCPF(q string) (fragment, rest string, ok bool, err error) {
+	c, ok, err := extractCPF(q)
+	return c.fragment, c.rest, ok, err
+}
+
+// ValidCPF exposes validCPF.
+func ValidCPF(digits string) bool { return validCPF(digits) }
+
+// FragmentSQL is the query of a CPF-fragment search ($1 fragment, $2 tsquery
+// or ”, $3 limit).
+const FragmentSQL = fragmentSQL

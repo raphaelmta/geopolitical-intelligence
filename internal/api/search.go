@@ -15,8 +15,26 @@ import (
 // maxQueryRunes bounds the search text.
 const maxQueryRunes = 200
 
+// searchItemJSON is a search hit. match says how it was found when that is
+// not the name or CNPJ: "cpf_fragment" for a person whose record's CPF
+// fragment equals the 6 middle digits of the CPF in the query (a candidate,
+// never a confirmation).
+type searchItemJSON struct {
+	entityJSON
+	Match string `json:"match,omitempty"`
+}
+
+// searchJSON is the search answer. CPFFragmentSearch is set (only) when the
+// query carried a CPF, so the client shows the caveat once.
+type searchJSON struct {
+	Items             []searchItemJSON `json:"items"`
+	CPFFragmentSearch bool             `json:"cpf_fragment_search,omitempty"`
+}
+
 // search: GET /api/v1/search?q=&kind=&limit=. The text is never logged nor
-// audited: the audit row holds only the kind and the number of results.
+// audited: the audit row holds only the kind, the number of results and,
+// for a query carrying a CPF, the flag cpf_fragment_search (never the CPF
+// or its fragment). The CPF is not echoed back either.
 func (s *server) search(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	text := q.Get("q")
@@ -34,15 +52,25 @@ func (s *server) search(w http.ResponseWriter, r *http.Request) {
 		limit = n
 	}
 	kind := claims.EntityKind(q.Get("kind"))
-	refs, err := s.Search.Query(r.Context(), text, kind, limit)
+	res, err := s.Search.Find(r.Context(), text, kind, limit)
 	if err != nil {
 		fail(w, r, err)
 		return
 	}
-	if !s.audited(w, r, "search", nil, map[string]any{"kind": string(kind), "count": len(refs)}) {
+	detail := map[string]any{"kind": string(kind), "count": len(res.Items)}
+	match := ""
+	if res.CPFFragment {
+		detail["cpf_fragment_search"] = true
+		match = "cpf_fragment"
+	}
+	if !s.audited(w, r, "search", nil, detail) {
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": toEntities(refs)})
+	out := searchJSON{Items: make([]searchItemJSON, len(res.Items)), CPFFragmentSearch: res.CPFFragment}
+	for i, ref := range res.Items {
+		out.Items[i] = searchItemJSON{entityJSON: toEntity(ref), Match: match}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // audited writes the audit row of an action and reports whether it did; when

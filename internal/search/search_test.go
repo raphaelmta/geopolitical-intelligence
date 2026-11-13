@@ -488,20 +488,27 @@ func TestCNPJLookups(t *testing.T) {
 	}
 }
 
-func TestCPFLikeQueryReturnsNothing(t *testing.T) {
+// TestCPFQueryNeverMatchesNames: an 11-digit query is a CPF-fragment search
+// (cpf_test.go), never a lookup of names carrying those digits; other long
+// numbers find nothing.
+func TestCPFQueryNeverMatchesNames(t *testing.T) {
 	f := setup(t)
-	f.entity(claims.KindCompany, "12345678", "JOANA FICTICIA 12345678901")
-	f.entity(claims.KindPerson, "", "12345678901")
+	f.entity(claims.KindCompany, "12345678", "JOANA FICTICIA 12345678909")
+	f.entity(claims.KindPerson, "", "12345678909")
 	s := search.New(f.pool)
 	f.rebuild(s)
-	for _, q := range []string{"12345678901", "123.456.789-01", "123456789", "1234567890123"} {
+	for _, q := range []string{"12345678909", "123.456.789-09", "123456789", "1234567890123", "JOANA FICTICIA 12345678909"} {
 		got, err := s.Query(ctx, q, "", 20)
 		if err != nil || len(got) != 0 {
 			t.Errorf("Query(%q) = %+v, %v; want nothing", q, got, err)
 		}
 	}
-	// A full CPF inside a name query is not searched either.
-	got, err := s.Query(ctx, "JOANA FICTICIA 12345678901", "", 20)
+	for _, q := range []string{"12345678901", "JOANA FICTICIA 12345678901"} {
+		if _, err := s.Query(ctx, q, "", 20); !errors.Is(err, search.ErrInvalidCPF) {
+			t.Errorf("Query(%q): %v, want ErrInvalidCPF", q, err)
+		}
+	}
+	got, err := s.Query(ctx, "JOANA FICTICIA", "", 20)
 	if err != nil || len(got) != 1 {
 		t.Fatalf("got %+v, %v", got, err)
 	}
@@ -810,8 +817,9 @@ func TestWordsWithLongDigitRunsAreNotSearchable(t *testing.T) {
 	s := search.New(f.pool)
 	f.rebuild(s)
 	for _, q := range []string{"MARIA12345678901", "maria1234", "maria12345", "12345678901", "maria12345678901 v"} {
+		// 12345678901 alone is a CPF with wrong check digits.
 		got, err := s.Query(ctx, q, "", 20)
-		if err != nil && !errors.Is(err, search.ErrQueryTooShort) {
+		if err != nil && !errors.Is(err, search.ErrQueryTooShort) && !errors.Is(err, search.ErrInvalidCPF) {
 			t.Errorf("Query(%q): %v", q, err)
 		}
 		if len(got) != 0 {
@@ -1106,8 +1114,12 @@ func sameResults(t *testing.T, f *fx, s *search.Service, groups [][]string) {
 	for _, g := range groups {
 		var first []int64
 		for i, q := range g {
+			// A query with a CPF spelling is a CPF-fragment search (no
+			// person here has a fragment) or a refused CPF: either way
+			// nothing, whatever the digits.
 			got, err := s.Query(ctx, q, "", 50)
-			if err != nil && !errors.Is(err, search.ErrQueryTooShort) {
+			if err != nil && !errors.Is(err, search.ErrQueryTooShort) && !errors.Is(err, search.ErrInvalidCPF) &&
+				!errors.Is(err, search.ErrMultipleCPFs) {
 				t.Fatalf("Query(%q): %v", q, err)
 			}
 			if i == 0 {
@@ -1194,21 +1206,28 @@ func TestCPFNeverConfirmedByWords(t *testing.T) {
 
 // TestNameWithLongNumberIsNotFoundByTypingItWhole: the exact tier is skipped
 // for a query with 9 or more digits, so the complete name returns what its
-// digit-free words return.
+// digit-free words return; a complete name carrying a CPF is a CPF search,
+// which finds no company.
 func TestNameWithLongNumberIsNotFoundByTypingItWhole(t *testing.T) {
 	f := setup(t)
-	f.entity(claims.KindCompany, "90020001", "JOAO 12345678901 ME")
-	f.entity(claims.KindCompany, "90020002", "JOAO 12345678902 ME")
-	f.entity(claims.KindCompany, "90020003", "JOAO 123.456.789-01 ME")
+	f.entity(claims.KindCompany, "90020001", "JOAO 1234567890 ME")
+	f.entity(claims.KindCompany, "90020002", "JOAO 1234567891 ME")
+	f.entity(claims.KindCompany, "90020003", "JOAO 123.456.789-0 ME")
+	f.entity(claims.KindCompany, "90020004", "JOAO 12345678909 ME")
 	s := search.New(f.pool)
 	f.rebuild(s)
 	want := ids(f.query(s, "joao me", "", 50))
-	if len(want) != 3 {
+	if len(want) != 4 {
 		t.Fatalf("joao me = %v", want)
 	}
-	for _, q := range []string{"JOAO 12345678901 ME", "JOAO 12345678902 ME", "joao 123.456.789-01 me", "JOAO 12345678909 ME"} {
+	for _, q := range []string{"JOAO 1234567890 ME", "JOAO 1234567891 ME", "joao 123.456.789-0 me", "JOAO 9876543210 ME"} {
 		if got := ids(f.query(s, q, "", 50)); !slices.Equal(got, want) {
 			t.Errorf("Query(%q) = %v, want the same as \"joao me\" %v", q, got, want)
+		}
+	}
+	for _, q := range []string{"JOAO 12345678909 ME", "joao 123.456.789-09 me"} {
+		if got := f.query(s, q, "", 50); len(got) != 0 {
+			t.Errorf("Query(%q) = %v, want nothing (a CPF search)", q, got)
 		}
 	}
 }

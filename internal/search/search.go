@@ -44,12 +44,21 @@
 // MaskCPF masks the CPF spellings it recognizes in displayed names; a CPF
 // written in another way is shown as the source published it.
 //
-// A query made only of digits (after removing . / - and spaces) is a CNPJ
-// lookup instead: 8 or 14 digits find the company with that base, 3 to 7
-// digits list companies whose base starts with them, 11 digits (a CPF) and
-// other lengths find nothing. The platform never searches full CPFs. An
-// alphanumeric CNPJ (8 characters, or 12 plus 2 check digits, mixing letters
-// and digits) is looked up by its base first and falls back to name search.
+// A query carrying a CPF (11 digits, punctuated or not, or the masked form
+// ***NNNNNN** the sources publish; see extractCPF) is a CPF-fragment search
+// instead: the platform stores only the 6 middle digits of a CPF, so it
+// lists the persons having a record with those 6 digits — candidates, never a
+// confirmation — restricted by the other words of the query if any. A full
+// CPF with wrong check digits is ErrInvalidCPF; two different CPFs,
+// ErrMultipleCPFs. The CPF is taken out of the query before the word rules
+// run, and names are still never matched by their digits.
+//
+// A query made only of digits (after removing . / - and spaces) and not
+// 11 digits is a CNPJ lookup instead: 8 or 14 digits find the company with
+// that base, 3 to 7 digits list companies whose base starts with them, other
+// lengths find nothing. An alphanumeric CNPJ (8 characters, or 12 plus 2
+// check digits, mixing letters and digits) is looked up by its base first
+// and falls back to name search.
 //
 // Accepted losses, as in the spike: no substring match inside a word (BRAS
 // does not find PETROBRAS), no tolerance for typos (OLIVERA does not find
@@ -215,16 +224,39 @@ func New(p *pgxpool.Pool) *Service {
 		swapLockTimeout: defaultSwapLockTimeout, swapAttempts: defaultSwapAttempts, swapBackoff: defaultSwapBackoff}
 }
 
-// Query searches q among entities of kind ("" for all kinds) and returns at
+// Result is the answer to a search.
+type Result struct {
+	Items []graph.EntityRef
+	// CPFFragment: the query carried a CPF and was answered by matching its
+	// 6 middle digits against the person records' CPF fragments. Every item
+	// is then a candidate (a person whose fragment matches), never a
+	// confirmed holder of that CPF.
+	CPFFragment bool
+}
+
+// Query is Find returning only the items.
+func (s *Service) Query(ctx context.Context, q string, kind claims.EntityKind, limit int) ([]graph.EntityRef, error) {
+	r, err := s.Find(ctx, q, kind, limit)
+	return r.Items, err
+}
+
+// Find searches q among entities of kind ("" for all kinds) and returns at
 // most limit results (limit ≤ 0 means 20; more than 50 means 50). Display
 // names have CPFs masked (MaskCPF). q is never logged.
-func (s *Service) Query(ctx context.Context, q string, kind claims.EntityKind, limit int) ([]graph.EntityRef, error) {
+//
+// A query carrying a CPF (extractCPF) is a CPF-fragment search: persons with
+// a record whose fragment is the CPF's 6 middle digits, restricted by the
+// other words of the query when there are any (fragmentSQL). Only persons
+// have records: kind company, party, public_body or foreign answers nothing.
+// The CPF is taken out before the word rules run, so they apply to the other
+// words unchanged; names are never matched by digits.
+func (s *Service) Find(ctx context.Context, q string, kind claims.EntityKind, limit int) (Result, error) {
 	sql, ok := tiers[kind]
 	if !ok {
-		return nil, ErrBadKind
+		return Result{}, ErrBadKind
 	}
 	if utf8.RuneCountInString(q) > maxRunes {
-		return nil, ErrQueryTooLong
+		return Result{}, ErrQueryTooLong
 	}
 	if limit <= 0 {
 		limit = defaultLimit
@@ -232,10 +264,24 @@ func (s *Service) Query(ctx context.Context, q string, kind claims.EntityKind, l
 	limit = min(limit, maxLimit)
 	// PostgreSQL text holds neither NUL nor invalid UTF-8.
 	q = strings.ReplaceAll(strings.ToValidUTF8(q, ""), "\x00", "")
-	if digits, ok := numericQuery(q); ok {
-		return s.byCNPJ(ctx, digits, kind, limit)
+	cpf, isCPF, err := extractCPF(q)
+	if err != nil {
+		return Result{}, err
 	}
+	if isCPF {
+		return s.byFragment(ctx, cpf, kind, limit)
+	}
+	if digits, ok := numericQuery(q); ok {
+		out, err := s.byCNPJ(ctx, digits, kind, limit)
+		return Result{Items: out}, err
+	}
+	out, err := s.byName(ctx, q, sql, kind, limit)
+	return Result{Items: out}, err
+}
 
+// byName is the name search (the two tiers), with the alphanumeric CNPJ
+// lookup first.
+func (s *Service) byName(ctx context.Context, q string, sql tierSQL, kind claims.EntityKind, limit int) ([]graph.EntityRef, error) {
 	tx, err := s.begin(ctx)
 	if err != nil {
 		return nil, err
@@ -252,22 +298,9 @@ func (s *Service) Query(ctx context.Context, q string, kind claims.EntityKind, l
 		}
 	}
 
-	// The words come from search_words, the same SQL function the index is
-	// built with, so query and index can never apply different rules.
-	var norm *string
-	var kept []string
-	var lastSearched bool
-	err = tx.QueryRow(ctx, `SELECT n,
-		coalesce((SELECT array_agg(word ORDER BY pos) FROM search_words(n) WHERE searched), '{}'),
-		coalesce((SELECT searched FROM search_words(n) ORDER BY pos DESC LIMIT 1), false)
-		FROM search_norm($1) AS n`, q).Scan(&norm, &kept, &lastSearched)
+	norm, kept, lastSearched, err := words(ctx, tx, q)
 	if err != nil {
-		return nil, fmt.Errorf("search: normalize: %w", err)
-	}
-	if len(kept) > maxWords {
-		// Words after the 10th searched one are ignored: the 10th becomes
-		// the last typed word.
-		kept, lastSearched = kept[:maxWords], true
+		return nil, err
 	}
 	useful := 0
 	for _, w := range kept {
@@ -301,6 +334,90 @@ func (s *Service) Query(ctx context.Context, q string, kind claims.EntityKind, l
 		}
 	}
 	return out, commit(ctx, tx)
+}
+
+// words normalizes q and returns its searched words. They come from
+// search_words, the same SQL function the index is built with, so query and
+// index can never apply different rules. Words after the 10th searched one
+// are ignored: the 10th becomes the last typed word.
+func words(ctx context.Context, tx pgx.Tx, q string) (norm *string, kept []string, lastSearched bool, err error) {
+	err = tx.QueryRow(ctx, `SELECT n,
+		coalesce((SELECT array_agg(word ORDER BY pos) FROM search_words(n) WHERE searched), '{}'),
+		coalesce((SELECT searched FROM search_words(n) ORDER BY pos DESC LIMIT 1), false)
+		FROM search_norm($1) AS n`, q).Scan(&norm, &kept, &lastSearched)
+	if err != nil {
+		return nil, nil, false, fmt.Errorf("search: normalize: %w", err)
+	}
+	if len(kept) > maxWords {
+		kept, lastSearched = kept[:maxWords], true
+	}
+	return norm, kept, lastSearched, nil
+}
+
+// fragmentSQL answers a CPF-fragment search (Find). It starts from the
+// fragment's records through person_record_cpf_fragment_entity (migration
+// 0022): a fragment is shared by tens of persons, a few hundred at worst, so
+// the candidate set is small and everything else is computed on it — never
+// the ranked name search filtered afterwards. $1 = fragment, $2 = tsquery of
+// the other words (” for none), $3 = limit.
+//
+// Same order as the name tiers (search_rank): degree DESC, normalized name
+// (byte order), id. The degree is counted here, from the live relationships,
+// with the rebuild's definition (open relationships touching the entity, a
+// relationship with itself once), so it can differ from the search tables'
+// between two rebuilds. The words match the same tsvector the search tables
+// index (search_tokens of search_norm of the name).
+const fragmentSQL = `WITH c AS (
+		SELECT DISTINCT pr.entity_id FROM person_record pr
+		WHERE pr.cpf_fragment = $1 AND pr.cpf_fragment <> '' AND pr.entity_id IS NOT NULL),
+	m AS (
+		SELECT e.id, e.kind, e.name, coalesce(e.natural_key, '') AS natural_key,
+			search_norm(e.name) COLLATE "C" AS name_norm
+		FROM c JOIN entity e ON e.id = c.entity_id
+		WHERE e.kind = 'person')
+	SELECT m.id, m.kind, m.name, m.natural_key
+	FROM m CROSS JOIN LATERAL (
+		SELECT (SELECT count(*) FROM relationship r
+				WHERE r.src_entity_id = m.id AND r.closed_collection_id IS NULL)
+			+ (SELECT count(*) FROM relationship r
+				WHERE r.dst_entity_id = m.id AND r.src_entity_id <> m.id AND r.closed_collection_id IS NULL) AS grau) d
+	WHERE m.name_norm IS NOT NULL
+		AND CASE WHEN $2::text = '' THEN true ELSE search_tokens(m.name_norm) @@ $2::text::tsquery END
+	ORDER BY d.grau DESC, m.name_norm, m.id
+	LIMIT $3`
+
+// byFragment is the CPF-fragment search: the other words of the query, if
+// any, restrict the candidates (an intersection, never a ranking). Words
+// that the rules drop (stopwords, digits) leave the fragment alone.
+func (s *Service) byFragment(ctx context.Context, cpf cpfInQuery, kind claims.EntityKind, limit int) (Result, error) {
+	if kind != "" && kind != claims.KindPerson {
+		// Only persons have CPF fragments.
+		return Result{CPFFragment: true}, nil
+	}
+	tx, err := s.begin(ctx)
+	if err != nil {
+		return Result{}, err
+	}
+	defer rollback(ctx, tx)
+	tsq := ""
+	if strings.TrimSpace(cpf.rest) != "" {
+		_, kept, lastSearched, err := words(ctx, tx, cpf.rest)
+		if err != nil {
+			return Result{}, err
+		}
+		if len(kept) > 0 {
+			frequent, err := s.frequentTokens(ctx, tx)
+			if err != nil {
+				return Result{}, err
+			}
+			tsq = tsQuery(kept, lastSearched, frequent)
+		}
+	}
+	out, err := collect(ctx, tx, nil, fragmentSQL, cpf.fragment, tsq, limit)
+	if err != nil {
+		return Result{}, fmt.Errorf("search: cpf fragment: %w", err)
+	}
+	return Result{Items: out, CPFFragment: true}, commit(ctx, tx)
 }
 
 // rollback ends a read-only transaction that was not committed (after a
@@ -409,7 +526,7 @@ func (s *Service) byCNPJ(ctx context.Context, digits string, kind claims.EntityK
 		return nil, ErrQueryTooShort
 	}
 	if (n != 8 && n != 14 && n >= 8) || (kind != "" && kind != claims.KindCompany) {
-		// 11 digits is a CPF; other lengths are no CNPJ either.
+		// No CNPJ (11 digits, a CPF, never get here: extractCPF comes first).
 		return nil, nil
 	}
 	tx, err := s.begin(ctx)

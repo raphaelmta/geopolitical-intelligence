@@ -31,6 +31,10 @@ func Open(ctx context.Context, url string) (*pgxpool.Pool, error) {
 }
 
 // Migrate applies all pending migrations. It is safe to call repeatedly.
+//
+// Numbering rule: a new migration always takes a number above the highest
+// one ever applied anywhere; skipped numbers (0010, 0015, 0020) stay unused.
+// goose refuses a pending migration numbered below the applied maximum.
 func Migrate(ctx context.Context, url string) error {
 	cfg, err := pgx.ParseConfig(url)
 	if err != nil {
