@@ -1,0 +1,55 @@
+{
+ "dados": [
+  {
+   "id": 204503,
+   "uri": "https://dadosabertos.camara.leg.br/api/v2/deputados/204503",
+   "nome": "Alexandre Padilha",
+   "siglaPartido": "PT",
+   "uriPartido": "https://dadosabertos.camara.leg.br/api/v2/partidos/36844",
+   "siglaUf": "SP",
+   "idLegislatura": 57,
+   "urlFoto": null,
+   "email": null
+  },
+  {
+   "id": 204511,
+   "uri": "https://dadosabertos.camara.leg.br/api/v2/deputados/204511",
+   "nome": "David Soares",
+   "siglaPartido": "UNIÃO",
+   "uriPartido": "https://dadosabertos.camara.leg.br/api/v2/partidos/36896",
+   "siglaUf": "SP",
+   "idLegislatura": 57,
+   "urlFoto": null,
+   "email": null
+  },
+  {
+   "id": 204511,
+   "uri": "https://dadosabertos.camara.leg.br/api/v2/deputados/204511",
+   "nome": "David Soares",
+   "siglaPartido": "PODE",
+   "uriPartido": "https://dadosabertos.camara.leg.br/api/v2/partidos/36896",
+   "siglaUf": "SP",
+   "idLegislatura": 57,
+   "urlFoto": null,
+   "email": null
+  }
+ ],
+ "links": [
+  {
+   "rel": "self",
+   "href": "https://dadosabertos.camara.leg.br/api/v2/deputados?idLegislatura=57&ordem=ASC&ordenarPor=id&pagina=2&itens=100"
+  },
+  {
+   "rel": "previous",
+   "href": "https://dadosabertos.camara.leg.br/api/v2/deputados?idLegislatura=57&ordem=ASC&ordenarPor=id&pagina=1&itens=100"
+  },
+  {
+   "rel": "first",
+   "href": "https://dadosabertos.camara.leg.br/api/v2/deputados?idLegislatura=57&ordem=ASC&ordenarPor=id&pagina=1&itens=100"
+  },
+  {
+   "rel": "last",
+   "href": "https://dadosabertos.camara.leg.br/api/v2/deputados?idLegislatura=57&ordem=ASC&ordenarPor=id&pagina=2&itens=100"
+  }
+ ]
+}

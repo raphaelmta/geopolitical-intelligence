@@ -1,0 +1,164 @@
+{
+ "ListaParlamentarLegislatura": {
+  "noNamespaceSchemaLocation": "https://legis.senado.leg.br/dadosabertos/dados/ListaParlamentarLegislaturav4.xsd",
+  "Metadados": {
+   "Versao": "12/11/2026 00:17:50",
+   "VersaoServico": "4",
+   "DataVersaoServico": "2021-09-09",
+   "DescricaoDataSet": "Retorna a lista de Senadores de uma Legislatura."
+  },
+  "Parlamentares": {
+   "Parlamentar": [
+    {
+     "IdentificacaoParlamentar": {
+      "CodigoParlamentar": "5918",
+      "NomeParlamentar": "Adilson Gomes",
+      "NomeCompletoParlamentar": "Adilson Gomes Silva",
+      "FormaTratamento": "Senador "
+     },
+     "Mandatos": {
+      "Mandato": [
+       {
+        "CodigoMandato": "526",
+        "UfParlamentar": "PE",
+        "PrimeiraLegislaturaDoMandato": {
+         "NumeroLegislatura": "56",
+         "DataInicio": "2019-02-01",
+         "DataFim": "2023-01-31"
+        },
+        "SegundaLegislaturaDoMandato": {
+         "NumeroLegislatura": "57",
+         "DataInicio": "2023-02-01",
+         "DataFim": "2027-01-31"
+        },
+        "DescricaoParticipacao": "2º Suplente",
+        "Titular": {
+         "DescricaoParticipacao": "Titular",
+         "CodigoParlamentar": "4545",
+         "NomeParlamentar": "Jarbas Vasconcelos"
+        },
+        "Suplentes": {
+         "Suplente": [
+          {
+           "DescricaoParticipacao": "1º Suplente",
+           "CodigoParlamentar": "5917",
+           "NomeParlamentar": "Fernando Dueire"
+          }
+         ]
+        }
+       }
+      ]
+     }
+    },
+    {
+     "IdentificacaoParlamentar": {
+      "CodigoParlamentar": "751",
+      "NomeParlamentar": "Arolde de Oliveira",
+      "NomeCompletoParlamentar": "Arolde de Oliveira",
+      "FormaTratamento": "Senador ",
+      "SiglaPartidoParlamentar": "PSD"
+     },
+     "Mandatos": {
+      "Mandato": [
+       {
+        "CodigoMandato": "545",
+        "UfParlamentar": "RJ",
+        "PrimeiraLegislaturaDoMandato": {
+         "NumeroLegislatura": "56",
+         "DataInicio": "2019-02-01",
+         "DataFim": "2023-01-31"
+        },
+        "SegundaLegislaturaDoMandato": {
+         "NumeroLegislatura": "57",
+         "DataInicio": "2023-02-01",
+         "DataFim": "2027-01-31"
+        },
+        "DescricaoParticipacao": "Titular",
+        "Suplentes": {
+         "Suplente": [
+          {
+           "DescricaoParticipacao": "1º Suplente",
+           "CodigoParlamentar": "5936",
+           "NomeParlamentar": "Carlos Portinho"
+          },
+          {
+           "DescricaoParticipacao": "2º Suplente",
+           "CodigoParlamentar": "5934",
+           "NomeParlamentar": "Renata Guerra"
+          }
+         ]
+        },
+        "Exercicios": {
+         "Exercicio": [
+          {
+           "CodigoExercicio": "2891",
+           "DataInicio": "2019-02-01",
+           "DataFim": "2020-10-21",
+           "SiglaCausaAfastamento": "FAL",
+           "DescricaoCausaAfastamento": "Falecimento"
+          }
+         ]
+        }
+       }
+      ]
+     }
+    },
+    {
+     "IdentificacaoParlamentar": {
+      "CodigoParlamentar": "5322",
+      "CodigoPublicoNaLegAtual": "840",
+      "NomeParlamentar": "Romário",
+      "NomeCompletoParlamentar": "Romario de Souza Faria",
+      "FormaTratamento": "Senador ",
+      "SiglaPartidoParlamentar": "S/Partido",
+      "UfParlamentar": "RJ"
+     },
+     "Mandatos": {
+      "Mandato": [
+       {
+        "CodigoMandato": "509",
+        "UfParlamentar": "RJ",
+        "PrimeiraLegislaturaDoMandato": {
+         "NumeroLegislatura": "55",
+         "DataInicio": "2015-02-01",
+         "DataFim": "2019-01-31"
+        },
+        "SegundaLegislaturaDoMandato": {
+         "NumeroLegislatura": "56",
+         "DataInicio": "2019-02-01",
+         "DataFim": "2023-01-31"
+        },
+        "DescricaoParticipacao": "Titular",
+        "Suplentes": {
+         "Suplente": [
+          {
+           "DescricaoParticipacao": "1º Suplente",
+           "CodigoParlamentar": "5613",
+           "NomeParlamentar": "João Batista Lemos"
+          },
+          {
+           "DescricaoParticipacao": "2º Suplente",
+           "CodigoParlamentar": "791",
+           "NomeParlamentar": "Vivaldo Barbosa"
+          }
+         ]
+        },
+        "Exercicios": {
+         "Exercicio": [
+          {
+           "CodigoExercicio": "2746",
+           "DataInicio": "2015-02-01",
+           "DataFim": "2023-01-31",
+           "SiglaCausaAfastamento": "TER",
+           "DescricaoCausaAfastamento": "Término do mandato"
+          }
+         ]
+        }
+       }
+      ]
+     }
+    }
+   ]
+  }
+ }
+}

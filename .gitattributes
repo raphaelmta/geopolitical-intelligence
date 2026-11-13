@@ -1,0 +1,7 @@
+# Receita fixture CSVs are Latin-1 with NUL bytes and exact line ends:
+# never rewrite encoding or line endings, never diff them as text.
+testdata/receita/*.csv binary
+# TSE fixture CSVs are Latin-1 with CRLF line ends: keep them byte for byte.
+testdata/tse/*.csv binary
+# CVM fixture CSVs are Latin-1 with CRLF line ends: keep them byte for byte.
+testdata/cvm/*.csv binary

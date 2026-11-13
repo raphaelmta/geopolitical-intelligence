@@ -1,0 +1,46 @@
+{
+ "dados": {
+  "id": 74283,
+  "uri": "https://dadosabertos.camara.leg.br/api/v2/deputados/74283",
+  "nomeCivil": "VICENTE PAULO DA SILVA",
+  "ultimoStatus": {
+   "id": 74283,
+   "uri": "https://dadosabertos.camara.leg.br/api/v2/deputados/74283",
+   "nome": "Vicentinho",
+   "siglaPartido": "PT",
+   "uriPartido": null,
+   "siglaUf": "SP",
+   "idLegislatura": 57,
+   "urlFoto": null,
+   "email": null,
+   "data": "2026-03-31",
+   "nomeEleitoral": "Vicentinho",
+   "gabinete": {
+    "nome": null,
+    "predio": null,
+    "sala": null,
+    "andar": null,
+    "telefone": null,
+    "email": null
+   },
+   "situacao": "Suplência",
+   "condicaoEleitoral": "Suplente",
+   "descricaoStatus": null
+  },
+  "cpf": "90066666600",
+  "sexo": null,
+  "urlWebsite": null,
+  "redeSocial": [],
+  "dataNascimento": null,
+  "dataFalecimento": null,
+  "ufNascimento": null,
+  "municipioNascimento": null,
+  "escolaridade": null
+ },
+ "links": [
+  {
+   "rel": "self",
+   "href": "https://dadosabertos.camara.leg.br/api/v2/deputados/74283"
+  }
+ ]
+}

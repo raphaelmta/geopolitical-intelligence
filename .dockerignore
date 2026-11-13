@@ -1,0 +1,11 @@
+.git
+.github
+.superpowers
+.env
+data
+docs
+web
+.env.*
+!.env.example
+results
+backups

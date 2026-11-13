@@ -1,0 +1,11 @@
+.superpowers/
+data/
+.env
+web/node_modules/
+web/dist/
+web/e2e-results/
+# Settings files of other compose projects (e.g. .env.national) and backups.
+.env.*
+!.env.example
+backups/
+results/

@@ -1,0 +1,49 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      # Host-side scripts (settings file with random secrets, its checks).
+      - run: make test-scripts
+      # Creates .env with random secrets (scripts/init-env.sh) on the way.
+      - run: make test
+      - run: make lint
+      - run: make vuln
+      - run: make test-web
+      - run: make lint-web
+      # npm audit --audit-level=high over web/package-lock.json
+      - run: make audit-web
+      # Builds deploy/Dockerfile.web; checks index.html (no inline script/style),
+      # the start-up config validation, the security headers and /config.json.
+      - run: make check-web-image
+
+  # The whole stack in a real browser (deploy/compose.e2e.yml): a throwaway
+  # compose project with no published port, always torn down by make e2e.
+  # Runs as in production (non-root, read-only, three database roles) with
+  # small PostgreSQL settings and its own throwaway secrets.
+  e2e:
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - run: make e2e
+      # Screenshots and traces of failed tests. The traces hold access tokens
+      # of the throwaway realm geoint-e2e, whose signing keys were destroyed
+      # with the stack at teardown; kept 3 days.
+      - if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: e2e-results
+          path: web/e2e-results/
+          retention-days: 3
+          if-no-files-found: ignore

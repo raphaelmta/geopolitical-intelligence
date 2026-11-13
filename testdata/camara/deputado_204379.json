@@ -1,0 +1,46 @@
+{
+ "dados": {
+  "id": 204379,
+  "uri": "https://dadosabertos.camara.leg.br/api/v2/deputados/204379",
+  "nomeCivil": "ACÁCIO DA SILVA FAVACHO NETO",
+  "ultimoStatus": {
+   "id": 204379,
+   "uri": "https://dadosabertos.camara.leg.br/api/v2/deputados/204379",
+   "nome": "Acácio Favacho",
+   "siglaPartido": "MDB",
+   "uriPartido": null,
+   "siglaUf": "AP",
+   "idLegislatura": 57,
+   "urlFoto": null,
+   "email": null,
+   "data": "2023-02-01",
+   "nomeEleitoral": "Acácio Favacho",
+   "gabinete": {
+    "nome": null,
+    "predio": null,
+    "sala": null,
+    "andar": null,
+    "telefone": null,
+    "email": null
+   },
+   "situacao": "Exercício",
+   "condicaoEleitoral": "Titular",
+   "descricaoStatus": null
+  },
+  "cpf": "90011111100",
+  "sexo": null,
+  "urlWebsite": null,
+  "redeSocial": [],
+  "dataNascimento": null,
+  "dataFalecimento": null,
+  "ufNascimento": null,
+  "municipioNascimento": null,
+  "escolaridade": null
+ },
+ "links": [
+  {
+   "rel": "self",
+   "href": "https://dadosabertos.camara.leg.br/api/v2/deputados/204379"
+  }
+ ]
+}

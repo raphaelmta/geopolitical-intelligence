@@ -1,0 +1,27 @@
+# Web app: build the static bundle with Node, serve it with unprivileged nginx.
+# Build context: web/ (see deploy/compose.yml).
+FROM node:24.22.1-alpine3.24@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53 AS build
+WORKDIR /web
+RUN chown node:node /web
+USER node
+COPY --chown=node:node package.json package-lock.json .npmrc ./
+RUN npm ci --ignore-scripts --no-audit --no-fund
+COPY --chown=node:node . .
+# npm exec --no: only the locally installed tools, never a registry download.
+RUN npm exec --no -- tsc --noEmit -p . && npm exec --no -- vite build
+
+# nginx-unprivileged runs as uid 101. At start, 05-web-config.sh validates the
+# WEB_* variables and writes /config.json and the server block (CSP included)
+# with printf, atomically; an invalid value stops the container.
+FROM nginxinc/nginx-unprivileged:1.30.6-alpine3.24@sha256:f5116ed4606f3eb015dd4a8e28cb9b351476dc0ad4bc6e9f93b19cec130cdf03
+USER root
+RUN rm -f /etc/nginx/conf.d/default.conf \
+    && install -d -o 101 -g 101 -m 0755 /etc/nginx/web-runtime
+COPY --chmod=0755 docker/web-config.sh /docker-entrypoint.d/05-web-config.sh
+COPY --from=build /web/dist /usr/share/nginx/html
+# Public runtime configuration (served as /config.json, origins used in the CSP).
+ENV WEB_API_URL=http://localhost:8080 \
+    WEB_OIDC_AUTHORITY=http://localhost:8081/realms/geoint \
+    WEB_OIDC_CLIENT_ID=geoint-web
+USER 101
+EXPOSE 5173

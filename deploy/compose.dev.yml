@@ -1,0 +1,59 @@
+# Development/test overlay: adds the `go` toolbox service on the stack network.
+# Used together with compose.yml by the Makefile (make test | lint | vuln | tidy | fmt),
+# which also sets small PostgreSQL values (SMALL_PG in the Makefile).
+x-go-env: &go-env
+  HOME: /tmp
+  GOFLAGS: -buildvcs=false
+  GOCACHE: /cache/build
+  GOMODCACHE: /cache/mod
+  # Tests connect as the database owner and create one schema per test
+  # (internal/testutil); internal/db/roles_test.go logs in as the two
+  # application roles on such a schema.
+  TEST_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+  TEST_NATS_URL: nats://nats:4222
+  TEST_S3_ENDPOINT: http://minio:9000
+  TEST_S3_ACCESS_KEY: ${MINIO_ROOT_USER}
+  TEST_S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+  TEST_S3_BUCKET: ${S3_BUCKET}
+
+x-go-deps: &go-deps
+  postgres:
+    condition: service_healthy
+  nats:
+    condition: service_healthy
+  minio:
+    condition: service_healthy
+
+services:
+  go:
+    image: golang:1.27.4-alpine3.24@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf
+    working_dir: /src
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    environment:
+      <<: *go-env
+      CGO_ENABLED: "0"
+    volumes:
+      - ..:/src
+      - gocache:/cache
+    depends_on: *go-deps
+
+  # `make test-race`: the race detector needs cgo and glibc, which the
+  # Alpine image lacks; same Go release on Debian (gcc included).
+  go-race:
+    image: golang:1.27.4-trixie@sha256:b54b2639de8c1bfe538ec5ffc45f29b1932235ac5f6d63c059853646677112d9
+    profiles: ["race"]
+    working_dir: /src
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    environment:
+      <<: *go-env
+      CGO_ENABLED: "1"
+      GOCACHE: /cache/build-race
+    volumes:
+      - ..:/src
+      - gocache:/cache
+    depends_on: *go-deps
+
+volumes:
+  gocache:
+    external: true
+    name: geoint-gocache

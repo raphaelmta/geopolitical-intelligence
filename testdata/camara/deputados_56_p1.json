@@ -1,0 +1,95 @@
+{
+ "dados": [
+  {
+   "id": 74159,
+   "uri": "https://dadosabertos.camara.leg.br/api/v2/deputados/74159",
+   "nome": "Odair Cunha",
+   "siglaPartido": "PT",
+   "uriPartido": "https://dadosabertos.camara.leg.br/api/v2/partidos/36844",
+   "siglaUf": "MG",
+   "idLegislatura": 56,
+   "urlFoto": null,
+   "email": null
+  },
+  {
+   "id": 74283,
+   "uri": "https://dadosabertos.camara.leg.br/api/v2/deputados/74283",
+   "nome": "Vicentinho",
+   "siglaPartido": "PT",
+   "uriPartido": "https://dadosabertos.camara.leg.br/api/v2/partidos/36844",
+   "siglaUf": "SP",
+   "idLegislatura": 56,
+   "urlFoto": null,
+   "email": null
+  },
+  {
+   "id": 204379,
+   "uri": "https://dadosabertos.camara.leg.br/api/v2/deputados/204379",
+   "nome": "Acácio Favacho",
+   "siglaPartido": "PROS",
+   "uriPartido": "https://dadosabertos.camara.leg.br/api/v2/partidos/36899",
+   "siglaUf": "AP",
+   "idLegislatura": 56,
+   "urlFoto": null,
+   "email": null
+  },
+  {
+   "id": 204379,
+   "uri": "https://dadosabertos.camara.leg.br/api/v2/deputados/204379",
+   "nome": "Acácio Favacho",
+   "siglaPartido": "MDB",
+   "uriPartido": "https://dadosabertos.camara.leg.br/api/v2/partidos/36899",
+   "siglaUf": "AP",
+   "idLegislatura": 56,
+   "urlFoto": null,
+   "email": null
+  },
+  {
+   "id": 204503,
+   "uri": "https://dadosabertos.camara.leg.br/api/v2/deputados/204503",
+   "nome": "Alexandre Padilha",
+   "siglaPartido": "PT",
+   "uriPartido": "https://dadosabertos.camara.leg.br/api/v2/partidos/36844",
+   "siglaUf": "SP",
+   "idLegislatura": 56,
+   "urlFoto": null,
+   "email": null
+  },
+  {
+   "id": 204511,
+   "uri": "https://dadosabertos.camara.leg.br/api/v2/deputados/204511",
+   "nome": "David Soares",
+   "siglaPartido": "DEM",
+   "uriPartido": "https://dadosabertos.camara.leg.br/api/v2/partidos/38009",
+   "siglaUf": "SP",
+   "idLegislatura": 56,
+   "urlFoto": null,
+   "email": null
+  },
+  {
+   "id": 204511,
+   "uri": "https://dadosabertos.camara.leg.br/api/v2/deputados/204511",
+   "nome": "David Soares",
+   "siglaPartido": "UNIÃO",
+   "uriPartido": "https://dadosabertos.camara.leg.br/api/v2/partidos/38009",
+   "siglaUf": "SP",
+   "idLegislatura": 56,
+   "urlFoto": null,
+   "email": null
+  }
+ ],
+ "links": [
+  {
+   "rel": "self",
+   "href": "https://dadosabertos.camara.leg.br/api/v2/deputados?idLegislatura=56&ordem=ASC&ordenarPor=id&pagina=1&itens=100"
+  },
+  {
+   "rel": "first",
+   "href": "https://dadosabertos.camara.leg.br/api/v2/deputados?idLegislatura=56&ordem=ASC&ordenarPor=id&pagina=1&itens=100"
+  },
+  {
+   "rel": "last",
+   "href": "https://dadosabertos.camara.leg.br/api/v2/deputados?idLegislatura=56&ordem=ASC&ordenarPor=id&pagina=1&itens=100"
+  }
+ ]
+}

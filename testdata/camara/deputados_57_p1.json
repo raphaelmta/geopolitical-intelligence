@@ -1,0 +1,66 @@
+{
+ "dados": [
+  {
+   "id": 74159,
+   "uri": "https://dadosabertos.camara.leg.br/api/v2/deputados/74159",
+   "nome": "Odair Cunha",
+   "siglaPartido": "PT",
+   "uriPartido": "https://dadosabertos.camara.leg.br/api/v2/partidos/36844",
+   "siglaUf": "MG",
+   "idLegislatura": 57,
+   "urlFoto": null,
+   "email": null
+  },
+  {
+   "id": 74283,
+   "uri": "https://dadosabertos.camara.leg.br/api/v2/deputados/74283",
+   "nome": "Vicentinho",
+   "siglaPartido": "PT",
+   "uriPartido": "https://dadosabertos.camara.leg.br/api/v2/partidos/36844",
+   "siglaUf": "SP",
+   "idLegislatura": 57,
+   "urlFoto": null,
+   "email": null
+  },
+  {
+   "id": 100689,
+   "uri": "https://dadosabertos.camara.leg.br/api/v2/deputados/100689",
+   "nome": "Hildo do Candango",
+   "siglaPartido": "REPUBLICANOS",
+   "uriPartido": "https://dadosabertos.camara.leg.br/api/v2/partidos/37908",
+   "siglaUf": "GO",
+   "idLegislatura": 57,
+   "urlFoto": null,
+   "email": null
+  },
+  {
+   "id": 204379,
+   "uri": "https://dadosabertos.camara.leg.br/api/v2/deputados/204379",
+   "nome": "Acácio Favacho",
+   "siglaPartido": "MDB",
+   "uriPartido": "https://dadosabertos.camara.leg.br/api/v2/partidos/36899",
+   "siglaUf": "AP",
+   "idLegislatura": 57,
+   "urlFoto": null,
+   "email": null
+  }
+ ],
+ "links": [
+  {
+   "rel": "self",
+   "href": "https://dadosabertos.camara.leg.br/api/v2/deputados?idLegislatura=57&ordem=ASC&ordenarPor=id&pagina=1&itens=100"
+  },
+  {
+   "rel": "next",
+   "href": "https://dadosabertos.camara.leg.br/api/v2/deputados?idLegislatura=57&ordem=ASC&ordenarPor=id&pagina=2&itens=100"
+  },
+  {
+   "rel": "first",
+   "href": "https://dadosabertos.camara.leg.br/api/v2/deputados?idLegislatura=57&ordem=ASC&ordenarPor=id&pagina=1&itens=100"
+  },
+  {
+   "rel": "last",
+   "href": "https://dadosabertos.camara.leg.br/api/v2/deputados?idLegislatura=57&ordem=ASC&ordenarPor=id&pagina=2&itens=100"
+  }
+ ]
+}

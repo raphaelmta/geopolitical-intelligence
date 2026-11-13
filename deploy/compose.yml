@@ -1,0 +1,340 @@
+# Local stack. Only api (8080), keycloak (8081) and web (5173) publish ports, bound to loopback;
+# postgres, nats and minio are reachable only inside the compose network.
+# Run through the Makefile (`make up`), which supplies --env-file and the project name.
+#
+# Least privilege (see README "Segurança da pilha"):
+#   - every service drops all Linux capabilities and cannot gain new ones
+#     (x-hardening); none runs as root except the one-shot volume-init, which
+#     only fixes the ownership of the data volumes and has no network;
+#   - api, worker, migrate, web, nats and minio have a read-only root
+#     filesystem (writable: their volume and small tmpfs mounts);
+#   - three database identities: the owner (POSTGRES_USER, superuser) only
+#     for `geoint migrate`; geoint_worker for the worker; geoint_api for the
+#     API and `geoint collect` (migration 0021_roles.sql).
+# PostgreSQL settings: deploy/TUNING.md. Every PG_* value can be overridden in .env.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+x-hardening: &hardening
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  logging: *logging
+
+x-geoint-build: &geoint-build
+  context: ..
+  dockerfile: deploy/Dockerfile.geoint
+  args:
+    VERSION: ${GEOINT_VERSION:-dev}
+
+services:
+  # One-shot, runs before the data services at every `make up`: gives the
+  # data volumes to the unprivileged users the services run as (postgres 70,
+  # nats and minio 10001), by scripts/volume-init.sh. Only files with another
+  # owner are changed, so a volume created by an older, root-running stack is
+  # converted once and later runs change nothing; a file vanishing during the
+  # walk (a later `make up` runs this while the data services are running)
+  # is not an error. Root here only,
+  # with CHOWN and DAC_READ_SEARCH (to walk directories private to another
+  # user) and no network.
+  volume-init:
+    image: alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
+    <<: *hardening
+    user: "0:0"
+    cap_add: [CHOWN, DAC_READ_SEARCH]
+    network_mode: none
+    read_only: true
+    volumes:
+      - pgdata:/v/pgdata
+      - natsdata:/v/natsdata
+      - miniodata:/v/miniodata
+      - ../scripts/volume-init.sh:/volume-init.sh:ro
+    command: ["sh", "/volume-init.sh", "/v/pgdata", "70", "/v/natsdata", "10001", "/v/miniodata", "10001"]
+
+  postgres:
+    image: postgres:18.6-alpine3.24@sha256:9ba53c7d41ea093baf5c1ba635ba5434c4f979880527d49bb7d9237d3193085b
+    <<: *hardening
+    # The image's own postgres user: the entrypoint then runs initdb and the
+    # server without switching users.
+    user: "70:70"
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /var/run/postgresql:uid=70,gid=70,mode=0775
+      - /tmp:uid=70,gid=70,mode=0700
+    # Parallel queries keep their shared hash tables in /dev/shm (Docker's
+    # default is 64 MB: too small for the search rebuild at national scale).
+    shm_size: ${PG_SHM_SIZE:-8g}
+    # Sized for the reference machine (6 cores, 31 GB RAM, NVMe); the values,
+    # their reasons and a 16 GB profile are in deploy/TUNING.md. Durability
+    # stays at the safe defaults (fsync, synchronous_commit, full WAL).
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${PG_SHARED_BUFFERS:-8GB}
+      - -c
+      - effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-20GB}
+      - -c
+      - maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM:-2GB}
+      - -c
+      - work_mem=${PG_WORK_MEM:-64MB}
+      - -c
+      - max_wal_size=${PG_MAX_WAL_SIZE:-32GB}
+      - -c
+      - checkpoint_timeout=${PG_CHECKPOINT_TIMEOUT:-30min}
+      - -c
+      - wal_compression=lz4
+      - -c
+      - random_page_cost=${PG_RANDOM_PAGE_COST:-1.1}
+      - -c
+      - effective_io_concurrency=${PG_EFFECTIVE_IO_CONCURRENCY:-200}
+      - -c
+      - max_worker_processes=${PG_MAX_WORKER_PROCESSES:-8}
+      - -c
+      - max_parallel_workers=${PG_MAX_PARALLEL_WORKERS:-6}
+      - -c
+      - max_parallel_workers_per_gather=${PG_MAX_PARALLEL_WORKERS_PER_GATHER:-4}
+      - -c
+      - max_parallel_maintenance_workers=${PG_MAX_PARALLEL_MAINTENANCE_WORKERS:-4}
+      - -c
+      - jit=off
+      - -c
+      - max_connections=${PG_MAX_CONNECTIONS:-60}
+      # Autovacuum for very large, append-mostly tables whose rows get one
+      # UPDATE per collection (last_seen): see deploy/TUNING.md.
+      - -c
+      - autovacuum_max_workers=${PG_AUTOVACUUM_MAX_WORKERS:-4}
+      - -c
+      - autovacuum_work_mem=${PG_AUTOVACUUM_WORK_MEM:-1GB}
+      - -c
+      - autovacuum_vacuum_scale_factor=0.02
+      - -c
+      - autovacuum_vacuum_insert_scale_factor=0.05
+      - -c
+      - autovacuum_analyze_scale_factor=0.02
+      - -c
+      - autovacuum_vacuum_cost_limit=2000
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      # PostgreSQL 18 images keep the versioned data directory under /var/lib/postgresql.
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    depends_on:
+      volume-init:
+        condition: service_completed_successfully
+
+  nats:
+    image: nats:2.15.2-alpine@sha256:afae2fdbe2e326c65e1246cb83b9d05d319188734f3bd577ac8072daae78a10f
+    <<: *hardening
+    user: "10001:10001"
+    restart: unless-stopped
+    read_only: true
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    volumes:
+      - natsdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -T 2 -O /dev/null http://127.0.0.1:8222/healthz"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    depends_on:
+      volume-init:
+        condition: service_completed_successfully
+
+  minio:
+    image: ghcr.io/coollabsio/minio:RELEASE.2025-10-15T17-29-55Z@sha256:69b55a1c1c5dc285ce04db96689f5b2102317fc77a50680a1874ca6efd1c87f9
+    <<: *hardening
+    user: "10001:10001"
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:uid=10001,gid=10001,mode=0700
+    # HOME and the certificate folder on the tmpfs: the image's are root's.
+    command: ["server", "/data", "--console-address", ":9001", "--certs-dir", "/tmp/certs"]
+    environment:
+      HOME: /tmp
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    depends_on:
+      volume-init:
+        condition: service_completed_successfully
+
+  # Dev mode (plain HTTP, local machine only) with Keycloak's own embedded
+  # store (volume kcdata), not the postgres server. --import-realm creates the
+  # realm from deploy/keycloak/realm-geoint.json on first start; an existing
+  # realm is left untouched (see README for a fresh import).
+  # Hostname v2: tokens and the browser always use the public URL as issuer,
+  # while backchannel endpoints (jwks_uri, token) follow the address a request
+  # used, so the api can fetch keys from http://keycloak:8080 inside the network.
+  # Runs as the image's user 1000; not read-only: start-dev rebuilds its
+  # server under /opt/keycloak at every start.
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.2@sha256:723b1d6e254c0fc96d5cffec860c7e0744d6a3277822b865bb538cf891575e41
+    <<: *hardening
+    restart: unless-stopped
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KC_HOSTNAME: http://localhost:8081
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+    volumes:
+      - kcdata:/opt/keycloak/data
+      - ./keycloak/realm-geoint.json:/opt/keycloak/data/import/realm-geoint.json:ro
+    ports:
+      - "127.0.0.1:8081:8080"
+
+  # `geoint migrate` as the database owner: started only by `make up` /
+  # `make migrate` (docker compose run), with the api and the worker stopped.
+  # Applies the migrations, syncs the catalogue of sources and sets the
+  # passwords of geoint_worker and geoint_api from .env (every run: that is
+  # also how they are rotated).
+  migrate:
+    build: *geoint-build
+    <<: *hardening
+    profiles: ["tools"]
+    read_only: true
+    command: ["migrate"]
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      DB_WORKER_PASSWORD: ${DB_WORKER_PASSWORD:-}
+      DB_API_PASSWORD: ${DB_API_PASSWORD:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # The API never opens the raw file store: no S3 settings here.
+  api:
+    build: *geoint-build
+    <<: *hardening
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=16m
+    command: ["api"]
+    environment:
+      # Role geoint_api: reads, audit, identity decisions, job and collection
+      # requests (migration 0021_roles.sql). Pool: 10 connections.
+      DATABASE_URL: postgres://geoint_api:${DB_API_PASSWORD:-}@postgres:5432/${POSTGRES_DB}?sslmode=disable&pool_max_conns=10
+      NATS_URL: nats://nats:4222
+      # Tokens must carry iss == OIDC_ISSUER (the public URL the browser uses);
+      # discovery and keys are fetched through the internal address.
+      OIDC_ISSUER: http://localhost:8081/realms/geoint
+      OIDC_DISCOVERY_URL: http://keycloak:8080/realms/geoint
+      OIDC_AUDIENCE: geoint-api
+      # The one origin CORS allows; empty: http://localhost:5173.
+      WEB_ORIGIN: ${WEB_ORIGIN:-}
+      # Host names the API accepts besides the local ones (localhost,
+      # 127.0.0.1, api); empty: only those.
+      API_ALLOWED_HOSTS: ${API_ALLOWED_HOSTS:-}
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+
+  worker:
+    build: *geoint-build
+    <<: *hardening
+    command: ["worker"]
+    restart: unless-stopped
+    # A clean stop lets a running load release its locks and record its end.
+    stop_grace_period: 2m
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64m
+    environment:
+      # Role geoint_worker (migration 0021_roles.sql). The worker refuses to
+      # start below 12 connections (cmd/geoint/worker.go).
+      DATABASE_URL: postgres://geoint_worker:${DB_WORKER_PASSWORD:-}@postgres:5432/${POSTGRES_DB}?sslmode=disable&pool_max_conns=16
+      NATS_URL: nats://nats:4222
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      S3_BUCKET: ${S3_BUCKET}
+      # Downloads are spooled to disk (files reach several GB), not tmpfs.
+      RAW_SPOOL_DIR: /spool
+      # Empty or true: the worker keeps every source that was collected once
+      # up to date (first look 1 min after start, then hourly); it never
+      # starts a source's first collection. false: only manual requests
+      # (make collect, "Coletar agora").
+      SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-}
+      # How many distinct CPF fragments a name may have and still merge
+      # automatically (above it: a proposal for an analyst). Empty: the code
+      # default (internal/identity, 100).
+      IDENTITY_COMMON_NAME_THRESHOLD: ${IDENTITY_COMMON_NAME_THRESHOLD:-}
+      # Receita completeness rules (docs/sources/receita.md). Leave empty: an
+      # explicit RECEITA_MIN_PARTS overrides the part count of the last load.
+      RECEITA_MIN_PARTS: ${RECEITA_MIN_PARTS:-}
+      RECEITA_SETTLE_HOURS: ${RECEITA_SETTLE_HOURS:-}
+      # Empty: the official Receita WebDAV folder (see docs/sources/receita.md).
+      RECEITA_BASE_URL: ${RECEITA_BASE_URL:-}
+      # Empty: the official TSE CDN folder (see docs/sources/tse.md).
+      TSE_BASE_URL: ${TSE_BASE_URL:-}
+      # Empty: the official Câmara and Senado open-data APIs and the CVM FRE
+      # folder (see docs/sources/camara.md, senado.md, cvm.md).
+      CAMARA_BASE_URL: ${CAMARA_BASE_URL:-}
+      SENADO_BASE_URL: ${SENADO_BASE_URL:-}
+      CVM_BASE_URL: ${CVM_BASE_URL:-}
+    volumes:
+      - spool:/spool
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  # Web app: the static bundle behind unprivileged nginx (deploy/Dockerfile.web).
+  # Public settings only (a public OIDC client has no secret); they are served
+  # as /config.json and limit the CSP connect-src. Read-only: the start-up
+  # script writes the server block and /config.json to tmpfs mounts.
+  web:
+    build:
+      context: ../web
+      dockerfile: ../deploy/Dockerfile.web
+    <<: *hardening
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:uid=101,gid=101,mode=0700,size=16m
+      - /etc/nginx/conf.d:uid=101,gid=101,mode=0755,size=1m
+      - /etc/nginx/web-runtime:uid=101,gid=101,mode=0755,size=1m
+    environment:
+      WEB_API_URL: http://localhost:8080
+      WEB_OIDC_AUTHORITY: http://localhost:8081/realms/geoint
+      WEB_OIDC_CLIENT_ID: geoint-web
+    ports:
+      - "127.0.0.1:5173:5173"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -T 2 -O /dev/null http://127.0.0.1:5173/config.json"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  pgdata:
+  natsdata:
+  miniodata:
+  kcdata:
+  spool:

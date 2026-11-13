@@ -1,0 +1,85 @@
+# End-to-end test overlay, used ONLY by `make e2e` together with compose.yml
+# under its own project (geoint-e2e): a throwaway stack, torn down with its
+# volumes after every run. It changes only what the test needs:
+#   - nothing is published on the host (ports reset);
+#   - Keycloak imports the test realm geoint-e2e (realm-e2e.json: the
+#     production realm plus two test users with test-only passwords) instead
+#     of the production realm;
+#   - the worker reads the five sources from the `sourcesim` service, which
+#     serves testdata/, with the scheduler off and the Receita completeness
+#     rules relaxed for the fixture (one part per kind, files dated now);
+#   - `playwright` runs the browser test ON this network.
+#
+# Topology: the browser must see exactly the URLs of production
+# (http://localhost:5173, :8080, :8081). The playwright container forwards
+# those loopback ports to web, api and keycloak (web/e2e/forward.mjs), so
+# PKCE runs in a secure context (localhost), Keycloak keeps
+# KC_HOSTNAME=http://localhost:8081, the API keeps its production issuer
+# shape and discovery through http://keycloak:8080, and the CSP and CORS
+# values are the production ones. Only the realm name differs.
+services:
+  keycloak:
+    ports: !reset []
+    volumes: !override
+      - kcdata:/opt/keycloak/data
+      - ./keycloak/realm-e2e.json:/opt/keycloak/data/import/realm-e2e.json:ro
+
+  api:
+    ports: !reset []
+    environment:
+      OIDC_ISSUER: http://localhost:8081/realms/geoint-e2e
+      OIDC_DISCOVERY_URL: http://keycloak:8080/realms/geoint-e2e
+
+  worker:
+    environment:
+      SCHEDULER_ENABLED: "false"
+      RECEITA_MIN_PARTS: "1"
+      RECEITA_SETTLE_HOURS: "0"
+      # Identity tuning, not a security setting: with 1, a name seen with two
+      # distinct CPF fragments (the ROBERTO and LÚCIA namesakes of
+      # testdata/receita) becomes a proposal, so the identity queue has
+      # pending items to test; a name with one fragment (JOSÉ, Receita + TSE)
+      # still merges automatically (internal/identity/resolver.go, rule n > threshold).
+      IDENTITY_COMMON_NAME_THRESHOLD: "1"
+      # The user part stands for the share token of the real WebDAV folder.
+      RECEITA_BASE_URL: http://e2e-share-token@sourcesim:8080/receita/
+      TSE_BASE_URL: http://sourcesim:8080/tse/
+      CAMARA_BASE_URL: http://sourcesim:8080/camara/api/v2
+      SENADO_BASE_URL: http://sourcesim:8080/senado/dadosabertos
+      CVM_BASE_URL: http://sourcesim:8080/cvm/
+    depends_on:
+      sourcesim:
+        condition: service_healthy
+
+  web:
+    ports: !reset []
+    environment:
+      WEB_OIDC_AUTHORITY: http://localhost:8081/realms/geoint-e2e
+
+  # Test tooling: serves testdata/ as the five sources (cmd/sourcesim).
+  sourcesim:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.sourcesim
+    healthcheck:
+      test: ["CMD", "/sourcesim", "-check"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Playwright with its browsers (version = @playwright/test in
+  # web/package.json). Started only by `make e2e` (docker compose run).
+  playwright:
+    image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f
+    profiles: ["e2e"]
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    working_dir: /src/web
+    environment:
+      HOME: /tmp
+      CI: "1"
+      # loopback port = in-network target (web/e2e/forward.mjs)
+      E2E_FORWARD: "5173=web:5173,8080=api:8080,8081=keycloak:8080"
+    volumes:
+      - ../web:/src/web
+    shm_size: 1gb
+    command: ["npm", "exec", "--no", "--", "playwright", "test"]

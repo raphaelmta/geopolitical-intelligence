@@ -1,0 +1,72 @@
+{
+ "FiliacaoParlamentar": {
+  "noNamespaceSchemaLocation": "https://legis.senado.leg.br/dadosabertos/dados/FiliacaoParlamentarv5.xsd",
+  "Metadados": {
+   "Versao": "12/11/2026 00:10:19",
+   "VersaoServico": "5",
+   "DataVersaoServico": "2021-09-09",
+   "DescricaoDataSet": "Retorna a relação de Filiações Partidárias do Senador informado no parâmetro."
+  },
+  "Parlamentar": {
+   "Codigo": "5322",
+   "Nome": "Romário",
+   "Filiacoes": {
+    "Filiacao": [
+     {
+      "Partido": {
+       "CodigoPartido": "163",
+       "SiglaPartido": "S/Partido",
+       "NomePartido": "Sem Partido"
+      },
+      "DataFiliacao": "2026-09-10"
+     },
+     {
+      "Partido": {
+       "CodigoPartido": "523",
+       "SiglaPartido": "PL",
+       "NomePartido": "Partido Liberal"
+      },
+      "DataFiliacao": "2021-04-08",
+      "DataDesfiliacao": "2026-09-09"
+     },
+     {
+      "Partido": {
+       "CodigoPartido": "577",
+       "SiglaPartido": "PODE",
+       "NomePartido": "Podemos"
+      },
+      "DataFiliacao": "2017-07-04",
+      "DataDesfiliacao": "2021-04-07"
+     },
+     {
+      "Partido": {
+       "CodigoPartido": "63",
+       "SiglaPartido": "PSB",
+       "NomePartido": "Partido Socialista Brasileiro"
+      },
+      "DataFiliacao": "2013-10-02",
+      "DataDesfiliacao": "2017-07-03"
+     },
+     {
+      "Partido": {
+       "CodigoPartido": "163",
+       "SiglaPartido": "S/Partido",
+       "NomePartido": "Sem Partido"
+      },
+      "DataFiliacao": "2013-08-20",
+      "DataDesfiliacao": "2013-10-01"
+     },
+     {
+      "Partido": {
+       "CodigoPartido": "63",
+       "SiglaPartido": "PSB",
+       "NomePartido": "Partido Socialista Brasileiro"
+      },
+      "DataFiliacao": "2011-02-01",
+      "DataDesfiliacao": "2013-08-19"
+     }
+    ]
+   }
+  }
+ }
+}
