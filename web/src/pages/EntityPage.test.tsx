@@ -1,11 +1,17 @@
-import { describe, expect, test, vi } from 'vitest';
+import { act } from 'react';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { EntityPage } from './EntityPage';
 import { renderAt } from '../test/render';
 import { json, mockFetch } from '../test/fetchMock';
 import { companyEntity, edge, personEntity, provenance } from '../test/fixtures';
+import { graphs, lastGraph, resetGraphs } from '../test/graphMock';
 import type { EntityResponse, PersonRecord } from '../api/types';
+
+vi.mock('../components/graphAdapter', () => import('../test/graphMock'));
+
+beforeEach(() => resetGraphs());
 
 const at = { route: '/entidade/12', path: '/entidade/:id' };
 
@@ -755,5 +761,109 @@ describe('EntityPage — ações de juntar e separar', () => {
     await screen.findByRole('heading', { level: 1, name: 'EMPRESA FICTICIA A LTDA' });
     expect(screen.queryByRole('button', { name: 'Separar ficha' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Juntar a esta pessoa' })).toBeNull();
+  });
+});
+
+describe('EntityPage — mapa de conexões', () => {
+  const partner = (id: number, name: string) => ({ id, kind: 'person', name, natural_key: '' });
+  const openEdges = [
+    edge({ relationship_id: 1, src: partner(21, 'SOCIA FICTICIA'), dst: companyEntity().entity }),
+    edge({
+      relationship_id: 2,
+      src: partner(22, 'SOCIO INFERIDO'),
+      dst: companyEntity().entity,
+      kind: 'inference',
+      confidence: 0.7,
+      identity_basis: 'auto',
+      identity_confidence: 0.9,
+    }),
+  ];
+
+  function routes(open: { items: unknown[]; next_cursor: string }) {
+    return mockFetch({
+      '/api/v1/entities/12': json(companyEntity()),
+      '/api/v1/entities/12/relationships?state=open': json(open),
+      '/api/v1/entities/12/relationships?state=closed': json({ items: [], next_cursor: '' }),
+      '/api/v1/entities/21': json(personEntity({ entity: partner(21, 'SOCIA FICTICIA') })),
+      '/api/v1/entities/21/relationships': json({ items: [], next_cursor: '' }),
+    });
+  }
+
+  test('desenha a entidade e os vizinhos da primeira página, com legenda e link para o mapa completo', async () => {
+    const { calls } = routes({ items: openEdges, next_cursor: '' });
+    renderAt(<EntityPage />, at);
+    const section = await screen.findByRole('region', { name: 'Mapa de conexões' });
+    // the header and the tables do not wait for the drawing
+    expect(screen.getByRole('heading', { level: 1, name: 'EMPRESA FICTICIA A LTDA' })).toBeTruthy();
+    const app = await within(section).findByRole('application', { name: /^Mapa de conexões de EMPRESA FICTICIA A LTDA: 3 entidades e 2 vínculos$/ });
+    expect(app.tabIndex).toBe(0);
+    const g = await lastGraph();
+    expect(g.ids()).toEqual(['e1', 'e2', 'n12', 'n21', 'n22']);
+    // the inferred link and the merged identity are drawn as such, never as plain fact
+    const drawn = g.handle.setElements.mock.calls.at(-1)![0];
+    const e2 = drawn.find((el) => el.data.id === 'e2')!;
+    expect(String(e2.classes)).toContain('inference');
+    expect(String(e2.classes)).toContain('identity');
+    expect(String(drawn.find((el) => el.data.id === 'e1')!.classes)).toContain('fact');
+    // the legend of the drawing
+    expect(within(section).getByRole('list', { name: 'Linhas do gráfico' }).textContent).toMatch(/tracejada: inferência/);
+    expect(within(section).getByRole('list', { name: 'Tipos de entidade' })).toBeTruthy();
+    expect(within(section).getByText(/2 entidades ligadas por 2 vínculos atuais/)).toBeTruthy();
+    expect(within(section).getByRole('link', { name: 'Abrir mapa completo' }).getAttribute('href')).toBe('/mapa/12');
+    // the section comes before the tables
+    const current = screen.getByRole('region', { name: 'Vínculos atuais' });
+    expect(section.compareDocumentPosition(current) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await within(current).findByRole('link', { name: 'SOCIA FICTICIA' });
+    // one request for the open relationships: the drawing reuses the table's
+    const open = calls.filter((c) => c.url.pathname === '/api/v1/entities/12/relationships' && c.url.searchParams.get('state') === 'open');
+    expect(open).toHaveLength(1);
+  });
+
+  test('sem vínculos atuais: aviso curto e o código do gráfico nem é carregado', async () => {
+    routes({ items: [], next_cursor: '' });
+    renderAt(<EntityPage />, at);
+    const section = await screen.findByRole('region', { name: 'Mapa de conexões' });
+    expect(await within(section).findByText(/Nenhum vínculo atual: não há conexões para desenhar/)).toBeTruthy();
+    expect(within(section).queryByRole('application')).toBeNull();
+    expect(within(section).queryByRole('button', { name: 'Ocultar o gráfico' })).toBeNull();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(graphs).toHaveLength(0);
+    expect(within(section).getByRole('link', { name: 'Abrir mapa completo' })).toBeTruthy();
+  });
+
+  test('primeira página cortada: diz que há mais e não busca as outras páginas', async () => {
+    const { calls } = routes({ items: openEdges, next_cursor: 'MjAw' });
+    renderAt(<EntityPage />, at);
+    const section = await screen.findByRole('region', { name: 'Mapa de conexões' });
+    const summary = await within(section).findByText(/mostrando os 2 primeiros; há mais/);
+    expect(within(summary.closest('p')!).getByRole('link', { name: 'Abra o mapa completo' }).getAttribute('href')).toBe('/mapa/12');
+    await lastGraph();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(calls.some((c) => c.url.searchParams.has('cursor'))).toBe(false);
+  });
+
+  test('clicar destaca e oferece o link; duplo clique num nó abre a página da entidade', async () => {
+    routes({ items: openEdges, next_cursor: '' });
+    renderAt(<EntityPage />, at);
+    const section = await screen.findByRole('region', { name: 'Mapa de conexões' });
+    const g = await lastGraph();
+    act(() => g.callbacks.onSelect('n21'));
+    const link = await within(section).findByRole('link', { name: 'SOCIA FICTICIA' });
+    expect(link.getAttribute('href')).toBe('/entidade/21');
+    act(() => g.callbacks.onSelect('e2'));
+    expect(await within(section).findByText('inferência · 70%')).toBeTruthy();
+    // the starting entity itself does not navigate
+    act(() => g.callbacks.onActivate('n12'));
+    expect(screen.getByRole('heading', { level: 1, name: 'EMPRESA FICTICIA A LTDA' })).toBeTruthy();
+    act(() => g.callbacks.onActivate('n21'));
+    expect(await screen.findByRole('heading', { level: 1, name: 'SOCIA FICTICIA' })).toBeTruthy();
+  });
+
+  test('"Pular o mapa" leva o foco para depois do gráfico', async () => {
+    routes({ items: openEdges, next_cursor: '' });
+    renderAt(<EntityPage />, at);
+    const section = await screen.findByRole('region', { name: 'Mapa de conexões' });
+    await userEvent.click(await within(section).findByRole('button', { name: 'Pular o mapa' }));
+    expect(document.activeElement).toBe(within(section).getByRole('link', { name: 'Abrir mapa completo' }).closest('p'));
   });
 });

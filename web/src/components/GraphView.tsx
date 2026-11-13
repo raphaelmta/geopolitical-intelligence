@@ -15,10 +15,22 @@ export interface GraphProps {
   onActivate?: (elementId: string) => void;
 }
 
+export interface GraphPanelProps extends GraphProps {
+  /** Replaces the default instruction (which speaks of expanding nodes). */
+  hint?: string;
+  /** Extra class on the panel (graph-panel--embedded: the smaller drawing of the entity page). */
+  className?: string;
+}
+
 const PHONE = '(max-width: 40rem)';
 
 function media(query: string): MediaQueryList | null {
   return typeof window.matchMedia === 'function' ? window.matchMedia(query) : null;
+}
+
+/** Whether a GraphPanel starts open: not on a phone. */
+export function graphStartsOpen(): boolean {
+  return !(media(PHONE)?.matches ?? false);
 }
 
 /**
@@ -26,21 +38,25 @@ function media(query: string): MediaQueryList | null {
  * the list on the same page, never the only way to read it; on a phone it
  * starts hidden behind "Mostrar o gráfico" (and is not mounted at all).
  */
-export function GraphPanel(props: GraphProps) {
-  const [open, setOpen] = useState(() => !(media(PHONE)?.matches ?? false));
+export function GraphPanel({ hint, className, ...props }: GraphPanelProps) {
+  const [open, setOpen] = useState(graphStartsOpen);
   const descId = useId();
   return (
-    <section className="graph-panel" aria-label="Gráfico">
+    <section className={className ? `graph-panel ${className}` : 'graph-panel'} aria-label="Gráfico">
       <div className="graph-panel__bar">
         <button type="button" className="button" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
           {open ? 'Ocultar o gráfico' : 'Mostrar o gráfico'}
         </button>
         <p id={descId} className="muted small graph-panel__hint">
-          {props.onActivate
-            ? 'Use a lista abaixo para navegar pelos vínculos; no gráfico, Enter expande o nó destacado.'
-            : 'Use a lista abaixo para navegar pelos vínculos.'}{' '}
-          Clique num elemento do gráfico para marcá-lo na lista
-          {props.onActivate ? '; duplo clique num nó o expande' : ''}.
+          {hint ?? (
+            <>
+              {props.onActivate
+                ? 'Use a lista abaixo para navegar pelos vínculos; no gráfico, Enter expande o nó destacado.'
+                : 'Use a lista abaixo para navegar pelos vínculos.'}{' '}
+              Clique num elemento do gráfico para marcá-lo na lista
+              {props.onActivate ? '; duplo clique num nó o expande' : ''}.
+            </>
+          )}
         </p>
       </div>
       {open && (

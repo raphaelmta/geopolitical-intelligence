@@ -852,6 +852,28 @@ label {
   border: 1px solid var(--line);
 }
 
+/* The smaller drawing of the entity page: one fixed height for the
+   placeholder, the loading notice and the canvas, so nothing shifts. */
+.graph-panel--embedded .graph-view__canvas,
+.graph-panel--embedded .graph-view__loading,
+.graph-placeholder {
+  height: 24rem;
+  min-height: 0;
+}
+
+.graph-placeholder {
+  margin: 0.75rem 0 0;
+  padding: 1rem;
+  background: var(--surface);
+  border: 1px dashed var(--line);
+}
+
+.connections__summary,
+.connections__selected {
+  margin: 0.5rem 0;
+  overflow-wrap: anywhere;
+}
+
 .graph-view__tools {
   margin-top: 0.35rem;
   text-align: right;
@@ -1296,6 +1318,12 @@ li.is-selected {
 
   .graph-view__canvas {
     height: 60vh;
+  }
+
+  .graph-panel--embedded .graph-view__canvas,
+  .graph-panel--embedded .graph-view__loading,
+  .graph-placeholder {
+    height: 18rem;
   }
 
   .modes__explain {

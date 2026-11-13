@@ -1,8 +1,16 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, apiGet } from '../api/client';
-import type { CompanyVersion, Edge, EntityResponse, PersonRecord, PossibleSame, RelationshipsPage } from '../api/types';
+import type {
+  CompanyVersion,
+  Edge,
+  EntityRef,
+  EntityResponse,
+  PersonRecord,
+  PossibleSame,
+  RelationshipsPage,
+} from '../api/types';
 import { attrLabels } from '../api/attrs';
 import {
   closedLabel,
@@ -22,6 +30,8 @@ import { isClosed } from '../api/edges';
 import { EdgeBadge } from '../components/EdgeBadge';
 import { EdgeLegend } from '../components/EdgeLegend';
 import { ErrorNotice } from '../components/ErrorNotice';
+import { GraphPanel, graphStartsOpen } from '../components/GraphView';
+import { edgeElementId, entityIdOf, toElements } from '../components/graphStyle';
 import { MergeDialog, SplitDialog } from '../components/IdentityDialogs';
 import { ProvenancePopover } from '../components/ProvenancePopover';
 import { Timeline } from '../components/Timeline';
@@ -164,6 +174,8 @@ function Entity({ id }: { id: string }) {
           {typeof notice === 'string' ? <p>{notice}</p> : notice}
         </div>
       )}
+
+      <ConnectionsSection entity={entity} />
 
       <EdgeLegend />
 
@@ -428,6 +440,138 @@ function RecordProvenance({ record: r }: { record: PersonRecord }) {
   );
 }
 
+/**
+ * The relationships of an entity, page by page. The map section and the
+ * "Vínculos atuais" table share it: with the same arguments they share the
+ * query (one request per page).
+ */
+function useRelationships(entityId: number, state: 'open' | 'closed', type: string) {
+  return useInfiniteQuery({
+    queryKey: ['relationships', entityId, state, type],
+    queryFn: ({ pageParam }) => {
+      const p = new URLSearchParams({ state });
+      if (type) p.set('type', type);
+      if (pageParam) p.set('cursor', pageParam);
+      return apiGet<RelationshipsPage>(`/entities/${encodeURIComponent(entityId)}/relationships?${p}`);
+    },
+    initialPageParam: '',
+    getNextPageParam: (last) => last.next_cursor || undefined,
+  });
+}
+
+/**
+ * "Mapa de conexões": the entity at the centre and its current relationships
+ * of the first page, drawn as on the map page (same elements, styles and
+ * legend: fact or inference, closed, stale, merged identity), from the data
+ * the "Vínculos atuais" table already loads (no filter). Never more than
+ * that first page, so a hub cannot freeze the page; the full map
+ * (/mapa/:id) expands, filters and pages. No relationships: no drawing, and
+ * the drawing's code (a lazy chunk) is never loaded.
+ */
+function ConnectionsSection({ entity }: { entity: EntityRef }) {
+  const h = useId();
+  const navigate = useNavigate();
+  const q = useRelationships(entity.id, 'open', '');
+  const [selected, setSelected] = useState<string | null>(null);
+  const afterRef = useRef<HTMLParagraphElement>(null);
+  const first = q.data?.pages[0];
+  const edges = useMemo(() => first?.items ?? [], [first]);
+  const more = Boolean(first?.next_cursor);
+  const elements = useMemo(() => toElements(edges, [entity], entity.id), [edges, entity]);
+  const nodes = useMemo(() => {
+    const m = new Map<number, EntityRef>([[entity.id, entity]]);
+    for (const e of edges) {
+      m.set(e.src.id, e.src);
+      m.set(e.dst.id, e.dst);
+    }
+    return m;
+  }, [edges, entity]);
+  const mapLink = `/mapa/${encodeURIComponent(entity.id)}`;
+
+  const open = (elementId: string) => {
+    const id = entityIdOf(elementId);
+    if (id != null && id !== entity.id) navigate(`/entidade/${encodeURIComponent(id)}`);
+  };
+  const selectedId = selected != null ? entityIdOf(selected) : null;
+  const selectedNode = selectedId != null ? nodes.get(selectedId) : undefined;
+  const selectedEdge = selected != null && selectedId == null ? edges.find((e) => edgeElementId(e.relationship_id) === selected) : undefined;
+
+  let body: ReactNode;
+  if (q.isPending) {
+    body = graphStartsOpen() ? (
+      <div className="graph-placeholder" role="status">
+        Carregando o mapa de conexões…
+      </div>
+    ) : (
+      <p role="status">Carregando o mapa de conexões…</p>
+    );
+  } else if (q.isError && edges.length === 0) {
+    body = <p className="muted">O mapa não pôde ser carregado; veja os vínculos atuais abaixo.</p>;
+  } else if (edges.length === 0) {
+    body = <p className="muted">Nenhum vínculo atual: não há conexões para desenhar.</p>;
+  } else {
+    body = (
+      <>
+        <p className="connections__summary">
+          {nodes.size - 1} {nodes.size - 1 === 1 ? 'entidade ligada' : 'entidades ligadas'} por {edges.length}{' '}
+          {edges.length === 1 ? 'vínculo atual' : 'vínculos atuais'}
+          {more && (
+            <>
+              {' '}
+              — <strong>mostrando os {edges.length} primeiros; há mais</strong>.{' '}
+              <Link to={mapLink}>Abra o mapa completo</Link> para ver todos, filtrar e expandir.
+            </>
+          )}
+        </p>
+        <p className="small">
+          <button type="button" className="link-button" onClick={() => afterRef.current?.focus()}>
+            Pular o mapa
+          </button>
+        </p>
+        <GraphPanel
+          className="graph-panel--embedded"
+          label={`Mapa de conexões de ${entity.name}: ${nodes.size} entidades e ${edges.length} vínculos`}
+          hint="As tabelas abaixo têm tudo o que o mapa mostra. Clique num elemento para destacá-lo; duplo clique num nó, ou Enter no nó destacado, abre a página dessa entidade."
+          elements={elements}
+          selectedId={selected}
+          onSelect={setSelected}
+          onActivate={open}
+        />
+        <div className="connections__selected" aria-live="polite">
+          {selectedNode && selectedNode.id !== entity.id && (
+            <p>
+              Destacado: <Link to={`/entidade/${encodeURIComponent(selectedNode.id)}`}>{selectedNode.name}</Link>{' '}
+              <span className="muted small">· {kindLabel(selectedNode.kind)}</span> ·{' '}
+              <Link to={`/mapa/${encodeURIComponent(selectedNode.id)}`} aria-label={`mapa a partir de ${selectedNode.name}`}>
+                mapa
+              </Link>
+            </p>
+          )}
+          {selectedEdge && (
+            <p>
+              Destacado: {relationTypeName(selectedEdge.type)} entre{' '}
+              <Link to={`/entidade/${encodeURIComponent(selectedEdge.src.id)}`}>{selectedEdge.src.name}</Link> e{' '}
+              <Link to={`/entidade/${encodeURIComponent(selectedEdge.dst.id)}`}>{selectedEdge.dst.name}</Link>{' '}
+              <EdgeBadge edge={selectedEdge} />
+            </p>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <section aria-labelledby={h} className="section connections">
+      <h2 id={h}>Mapa de conexões</h2>
+      {body}
+      <p ref={afterRef} tabIndex={-1} className="small">
+        <Link to={mapLink}>Abrir mapa completo</Link>
+        <span className="muted"> — expandir, filtrar por tipo e data, e carregar todos os vínculos.</span>
+      </p>
+    </section>
+  );
+}
+
 function RelationshipsSection({
   entityId,
   state,
@@ -440,17 +584,7 @@ function RelationshipsSection({
   title: string;
 }) {
   const h = useId();
-  const q = useInfiniteQuery({
-    queryKey: ['relationships', entityId, state, type],
-    queryFn: ({ pageParam }) => {
-      const p = new URLSearchParams({ state });
-      if (type) p.set('type', type);
-      if (pageParam) p.set('cursor', pageParam);
-      return apiGet<RelationshipsPage>(`/entities/${encodeURIComponent(entityId)}/relationships?${p}`);
-    },
-    initialPageParam: '',
-    getNextPageParam: (last) => last.next_cursor || undefined,
-  });
+  const q = useRelationships(entityId, state, type);
   // Pages are appended; a row seen on an earlier page is not repeated.
   const seen = new Set<number>();
   const edges = (q.data?.pages.flatMap((p) => p.items) ?? []).filter(
