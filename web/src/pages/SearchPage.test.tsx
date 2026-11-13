@@ -1,14 +1,36 @@
-import { describe, expect, test, vi } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { SearchPage } from './SearchPage';
+import { Link, Route, Routes, useLocation, useNavigate } from 'react-router';
+import { SearchPage, forgetCPFSearch } from './SearchPage';
 import { renderAt } from '../test/render';
 import { json, mockFetch } from '../test/fetchMock';
 
 async function search(text: string) {
-  await userEvent.type(screen.getByRole('searchbox', { name: /Nome ou CNPJ/ }), text);
+  const box = screen.getByRole('searchbox', { name: /Nome, CNPJ ou CPF/ });
+  await userEvent.clear(box);
+  await userEvent.type(box, text);
   await userEvent.click(screen.getByRole('button', { name: 'Buscar' }));
 }
+
+/** Shows the router's current location, to check what reaches the URL. */
+function Where() {
+  const l = useLocation();
+  return <output data-testid="where">{l.pathname + l.search + l.hash}</output>;
+}
+
+const where = () => screen.getByTestId('where').textContent ?? '';
+
+afterEach(() => forgetCPFSearch());
+
+// Synthetic CPFs only: 123.456.789-09 has valid check digits.
+const CPF_HITS = {
+  cpf_fragment_search: true,
+  items: [
+    { id: 31, kind: 'person', name: 'MARIA FICTICIA', natural_key: '', match: 'cpf_fragment' },
+    { id: 32, kind: 'person', name: 'MARIA OUTRA FICTICIA', natural_key: '', match: 'cpf_fragment' },
+  ],
+};
 
 describe('SearchPage', () => {
   test('busca com menos de 3 caracteres não chama a API e mostra aviso', async () => {
@@ -125,5 +147,142 @@ describe('SearchPage', () => {
     expect(details.textContent).toMatch(/palavras inteiras/);
     expect(details.textContent).toMatch(/erros de digitação/);
     expect(details.textContent).toMatch(/CNPJ/);
+  });
+
+  test('busca por CPF: aviso de candidatos, marca em cada resultado e nada do CPF na URL', async () => {
+    const { calls } = mockFetch({ '/api/v1/search': json(CPF_HITS) });
+    renderAt(
+      <>
+        <SearchPage />
+        <Where />
+      </>,
+    );
+    expect(screen.getByRole('searchbox', { name: 'Nome, CNPJ ou CPF' }).getAttribute('placeholder')).toBe(
+      'nome, CNPJ ou CPF',
+    );
+    await search('maria 123.456.789-09');
+    const table = await screen.findByRole('table', { name: /Pessoas candidatas/ });
+    const note = screen.getByRole('note', { name: 'Sobre a busca por CPF' });
+    expect(note.textContent).toMatch(/6 dígitos do meio/);
+    expect(note.textContent).toMatch(/não é a confirmação/);
+    expect(note.textContent).toMatch(/acrescente o nome/);
+    // the note comes before the results and has no close button
+    expect(note.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(note).queryByRole('button')).toBeNull();
+    const rows = within(table).getAllByRole('row').slice(1);
+    expect(rows).toHaveLength(2);
+    for (const r of rows) expect(within(r).getByText('coincide com o trecho do CPF')).toBeTruthy();
+    // the API got the query; the URL, the history and storage did not
+    expect(calls[0]!.url.searchParams.get('q')).toBe('maria 123.456.789-09');
+    expect(where()).toBe('/');
+    expect(window.history.state?.usr ?? null).toBeNull();
+    expect(JSON.stringify({ ...window.localStorage })).not.toMatch(/456/);
+    expect(JSON.stringify({ ...window.sessionStorage })).not.toMatch(/456/);
+    // the text stays in the box
+    expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('maria 123.456.789-09');
+  });
+
+  test('busca por CPF depois de uma por nome tira o nome da URL; outra por nome volta à URL', async () => {
+    mockFetch({
+      '/api/v1/search?q=maria': json({ items: [{ id: 31, kind: 'person', name: 'MARIA FICTICIA', natural_key: '' }] }),
+      '/api/v1/search?q=***456789**': json(CPF_HITS),
+      '/api/v1/search?q=joana': json({ items: [] }),
+    });
+    renderAt(
+      <>
+        <SearchPage />
+        <Where />
+      </>,
+      { route: '/?q=maria' },
+    );
+    expect(await screen.findByRole('table', { name: /Resultados para “maria”/ })).toBeTruthy();
+    await search('***456789**');
+    expect(await screen.findByRole('table', { name: /Pessoas candidatas/ })).toBeTruthy();
+    expect(where()).toBe('/');
+    await search('joana');
+    expect(await screen.findByText(/Nenhum resultado para “joana”/)).toBeTruthy();
+    expect(where()).toBe('/?q=joana');
+    expect(screen.queryByRole('note', { name: 'Sobre a busca por CPF' })).toBeNull();
+  });
+
+  test('CPF que chega na URL vai para a memória e sai da URL', async () => {
+    const { calls } = mockFetch({ '/api/v1/search': json(CPF_HITS) });
+    renderAt(
+      <>
+        <SearchPage />
+        <Where />
+      </>,
+      { route: '/?q=12345678909&tipo=person' },
+    );
+    expect(await screen.findByRole('table', { name: /Pessoas candidatas/ })).toBeTruthy();
+    expect(where()).toBe('/?tipo=person');
+    expect(calls[0]!.url.searchParams.get('q')).toBe('12345678909');
+    expect(calls[0]!.url.searchParams.get('kind')).toBe('person');
+  });
+
+  test('voltar para a busca traz de volta a busca por CPF, só da memória', async () => {
+    const { calls } = mockFetch({ '/api/v1/search': json(CPF_HITS) });
+    function Back() {
+      const navigate = useNavigate();
+      return (
+        <button type="button" onClick={() => void navigate(-1)}>
+          voltar
+        </button>
+      );
+    }
+    renderAt(
+      <Routes>
+        <Route
+          path="/"
+          element={
+            <>
+              <SearchPage />
+              <Link to="/entidade/31">ir</Link>
+              <Where />
+            </>
+          }
+        />
+        <Route path="/entidade/:id" element={<Back />} />
+      </Routes>,
+      { path: '*' },
+    );
+    await search('123.456.789-09');
+    expect(await screen.findByRole('table', { name: /Pessoas candidatas/ })).toBeTruthy();
+    await userEvent.click(screen.getByRole('link', { name: 'ir' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'voltar' }));
+    expect(await screen.findByRole('table', { name: /Pessoas candidatas/ })).toBeTruthy();
+    expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('123.456.789-09');
+    expect(where()).toBe('/');
+    expect(calls.every((c) => c.url.pathname === '/api/v1/search')).toBe(true);
+  });
+
+  test('CPF inválido e dois CPFs viram mensagens em português', async () => {
+    mockFetch({
+      '/api/v1/search?q=123.456.789-01': json({ error: 'invalid_cpf' }, 400),
+      '/api/v1/search?q=123.456.789-09 111.222.333-96': json({ error: 'multiple_cpfs' }, 400),
+    });
+    renderAt(<SearchPage />);
+    await search('123.456.789-01');
+    expect((await screen.findByRole('alert')).textContent).toContain('CPF inválido: confira os dígitos.');
+    await search('123.456.789-09 111.222.333-96');
+    expect((await screen.findByRole('alert')).textContent).toContain('mais de um CPF');
+  });
+
+  test('busca por CPF sem resultado e com tipo empresa explica que só acha pessoas', async () => {
+    mockFetch({ '/api/v1/search': json({ cpf_fragment_search: true, items: [] }) });
+    renderAt(<SearchPage />);
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Tipo' }), 'company');
+    await search('123.456.789-09');
+    expect(await screen.findByText(/A busca por CPF só encontra pessoas/)).toBeTruthy();
+    expect(screen.getByRole('note', { name: 'Sobre a busca por CPF' })).toBeTruthy();
+  });
+
+  test('a ajuda explica a busca por CPF', () => {
+    mockFetch({});
+    renderAt(<SearchPage />);
+    const details = screen.getByText('Como a busca funciona').closest('details')!;
+    expect(details.textContent).toMatch(/6 dígitos do meio/);
+    expect(details.textContent).toMatch(/candidatas, não uma confirmação/);
+    expect(details.textContent).toMatch(/não vai para o endereço da página/);
   });
 });

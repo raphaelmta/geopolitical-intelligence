@@ -1,7 +1,8 @@
-import { useEffect, useId, useState, type FormEvent } from 'react';
-import { Link, useSearchParams } from 'react-router';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { Link, useNavigationType, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { apiGet } from '../api/client';
+import { mayCarryCPF } from '../api/cpf';
 import type { SearchResponse } from '../api/types';
 import { kindLabel, naturalKeyLabel, usefulLength } from '../api/format';
 import { ErrorNotice } from '../components/ErrorNotice';
@@ -10,25 +11,71 @@ import { usePageHeading } from '../usePageHeading';
 const LIMIT = 50;
 const MAX_LENGTH = 200;
 
+interface Search {
+  q: string;
+  kind: string;
+}
+
 /**
- * Search by name or CNPJ. Submits on Enter or "Buscar" (no search while
+ * The last search carrying a CPF, in this tab's memory only (gone on reload
+ * or sign-out): brought back when the user returns with Back to the search
+ * page, whose URL never holds it.
+ */
+let lastCPFSearch: Search | null = null;
+
+/** Test support: forget the remembered CPF search. */
+export function forgetCPFSearch() {
+  lastCPFSearch = null;
+}
+
+/**
+ * Search by name, CNPJ or CPF. Submits on Enter or "Buscar" (no search while
  * typing: every search is audited). The query lives in the URL (?q=&tipo=)
- * so back/forward and links work.
+ * so back/forward and links work — except a query that may carry a CPF
+ * (mayCarryCPF): that one stays in memory, never in the URL, the history or
+ * storage. A CPF that arrives in the URL (an old link) is moved to memory
+ * and removed from the URL at once.
  */
 export function SearchPage() {
   const [params, setParams] = useSearchParams();
-  const q = params.get('q') ?? '';
-  const kind = params.get('tipo') ?? '';
+  const navigation = useNavigationType();
+  const urlQ = params.get('q') ?? '';
+  const urlKind = params.get('tipo') ?? '';
+  const [memory, setMemory] = useState<Search | null>(() => {
+    if (mayCarryCPF(urlQ)) return { q: urlQ, kind: urlKind };
+    if (!urlQ && navigation === 'POP' && lastCPFSearch?.kind === urlKind) return lastCPFSearch;
+    return null;
+  });
+  const memoryRef = useRef(memory);
+  memoryRef.current = memory;
+  const active: Search = memory ?? { q: urlQ, kind: urlKind };
+  const { q, kind } = active;
   const [text, setText] = useState(q);
   const [kindChoice, setKindChoice] = useState(kind);
   const [tooShort, setTooShort] = useState(false);
   const hintId = useId();
   const h1 = usePageHeading('Busca');
-  // Back/forward changes the URL: show the search it holds.
+  // Back/forward changes the URL: show the search it holds. A URL with a
+  // CPF is replaced by one without it (the search moves to memory).
   useEffect(() => {
-    setText(q);
-    setKindChoice(kind);
-  }, [q, kind]);
+    if (mayCarryCPF(urlQ)) {
+      const moved = { q: urlQ, kind: urlKind };
+      lastCPFSearch = moved;
+      setMemory(moved);
+      setText(urlQ);
+      setKindChoice(urlKind);
+      setParams(urlKind ? { tipo: urlKind } : {}, { replace: true });
+      return;
+    }
+    if (urlQ) {
+      setMemory(null);
+      setText(urlQ);
+      setKindChoice(urlKind);
+    } else if (!memoryRef.current) {
+      setText('');
+      setKindChoice(urlKind);
+    }
+  }, [urlQ, urlKind]);
   const enabled = usefulLength(q) >= 3;
 
   const result = useQuery({
@@ -49,10 +96,24 @@ export function SearchPage() {
       return;
     }
     setTooShort(false);
+    if (mayCarryCPF(t)) {
+      const s = { q: t, kind: kindChoice };
+      lastCPFSearch = s;
+      memoryRef.current = s;
+      setMemory(s);
+      // Leave the URL without the previous query (and with the type).
+      if (urlQ || urlKind !== kindChoice) setParams(kindChoice ? { tipo: kindChoice } : {});
+      return;
+    }
+    lastCPFSearch = null;
+    memoryRef.current = null;
+    setMemory(null);
     const next = new URLSearchParams({ q: t });
     if (kindChoice) next.set('tipo', kindChoice);
     setParams(next);
   };
+
+  const cpfSearch = result.isSuccess && result.data.cpf_fragment_search === true;
 
   return (
     <>
@@ -61,10 +122,11 @@ export function SearchPage() {
       </h1>
       <form className="search" role="search" onSubmit={submit}>
         <div className="search__field">
-          <label htmlFor="busca-texto">Nome ou CNPJ</label>
+          <label htmlFor="busca-texto">Nome, CNPJ ou CPF</label>
           <input
             id="busca-texto"
             type="search"
+            placeholder="nome, CNPJ ou CPF"
             value={text}
             maxLength={MAX_LENGTH}
             autoComplete="off"
@@ -91,7 +153,9 @@ export function SearchPage() {
         </button>
       </form>
       <p id={hintId} className={tooShort ? 'hint hint--warning' : 'hint'} role="status">
-        {tooShort ? 'Digite pelo menos 3 caracteres' : 'Pressione Enter para buscar. CNPJ com 8 ou 14 dígitos.'}
+        {tooShort
+          ? 'Digite pelo menos 3 caracteres'
+          : 'Pressione Enter para buscar. CNPJ com 8 ou 14 dígitos; CPF com 11 dígitos, que pode vir com o nome.'}
       </p>
 
       <SearchHelp />
@@ -100,16 +164,27 @@ export function SearchPage() {
         <section aria-live="polite" className="results">
           {result.isPending && <p role="status">Buscando…</p>}
           {result.isError && <ErrorNotice error={result.error} onRetry={() => void result.refetch()} />}
+          {cpfSearch && <CPFNote />}
           {result.isSuccess &&
             (result.data.items.length === 0 ? (
-              <p className="empty">
-                Nenhum resultado para “{q}”{kind ? ` com o tipo ${kindLabel(kind)}` : ''}. Veja abaixo de
-                “Como a busca funciona” o que ela não encontra.
-              </p>
+              cpfSearch ? (
+                <p className="empty">
+                  {kind && kind !== 'person'
+                    ? `A busca por CPF só encontra pessoas; nada com o tipo ${kindLabel(kind)}.`
+                    : 'Nenhuma pessoa com esse trecho do CPF' +
+                      (usefulLength(q.replace(/[\d*]/g, '')) > 0 ? ' e essas palavras.' : '.')}
+                </p>
+              ) : (
+                <p className="empty">
+                  Nenhum resultado para “{q}”{kind ? ` com o tipo ${kindLabel(kind)}` : ''}. Veja abaixo de
+                  “Como a busca funciona” o que ela não encontra.
+                </p>
+              )
             ) : (
               <table className="table">
                 <caption>
-                  Resultados para “{q}” ({result.data.items.length}
+                  {cpfSearch ? 'Pessoas candidatas para “' : 'Resultados para “'}
+                  {q}” ({result.data.items.length}
                   {result.data.items.length >= LIMIT ? ', no máximo; refine a busca' : ''})
                 </caption>
                 <thead>
@@ -125,6 +200,12 @@ export function SearchPage() {
                       <td>{kindLabel(item.kind)}</td>
                       <td>
                         <Link to={`/entidade/${encodeURIComponent(item.id)}`}>{item.name}</Link>
+                        {item.match === 'cpf_fragment' && (
+                          <>
+                            {' '}
+                            <span className="tag tag--identity">coincide com o trecho do CPF</span>
+                          </>
+                        )}
                       </td>
                       <td className="mono">{naturalKeyLabel(item.kind, item.natural_key)}</td>
                     </tr>
@@ -135,6 +216,20 @@ export function SearchPage() {
         </section>
       )}
     </>
+  );
+}
+
+/** Shown above every CPF search's results; cannot be dismissed. */
+function CPFNote() {
+  return (
+    <div className="notice notice--caveat" role="note" aria-label="Sobre a busca por CPF">
+      <p>
+        <strong>Busca por trecho do CPF.</strong> As fontes publicam só os 6 dígitos do meio do CPF. Estas são pessoas
+        cujo CPF <strong>coincide nesse trecho</strong> — não é a confirmação de que o CPF digitado seja delas, e várias
+        pessoas podem ter o mesmo trecho.
+      </p>
+      <p>Para restringir, acrescente o nome à busca (por exemplo: maria silva e o CPF).</p>
+    </div>
   );
 }
 
@@ -163,8 +258,15 @@ function SearchHelp() {
           ou mais dígitos no total, toda palavra com dígito. Busque esses nomes pelas palavras sem números.
         </li>
         <li>
-          CPF não é pesquisável, e uma busca nunca confirma a ligação entre um CPF e um nome. Os nomes aparecem com o
-          CPF mascarado (***NNNNNN**).
+          <strong>CPF</strong>: digite os 11 dígitos (com ou sem pontuação) ou o trecho mascarado (***NNNNNN**), sozinho
+          ou com o nome. As fontes publicam só os <strong>6 dígitos do meio</strong> do CPF, e só eles são guardados: o
+          resultado lista as pessoas cujo CPF coincide nesse trecho — <strong>candidatas, não uma confirmação</strong>.
+          Várias pessoas podem ter o mesmo trecho; acrescente o nome para restringir. Um CPF com dígitos verificadores
+          errados é recusado. O CPF digitado não vai para o endereço da página nem para o histórico.
+        </li>
+        <li>
+          Um CPF escrito dentro de um nome nunca é pesquisável por ele, e os nomes aparecem com o CPF mascarado
+          (***NNNNNN**).
         </li>
         <li>Até 200 caracteres e 10 palavras; no máximo {LIMIT} resultados, das entidades mais conectadas para as menos.</li>
       </ul>

@@ -77,4 +77,24 @@ describe('EntityPicker', () => {
     expect(input.hasAttribute('aria-controls')).toBe(false);
     expect(input.hasAttribute('aria-activedescendant')).toBe(false);
   });
+
+  test('aceita CPF: candidatos pelo trecho do CPF, com o aviso', async () => {
+    const onChange = vi.fn();
+    // Synthetic CPF with valid check digits.
+    const { calls } = mockFetch({
+      '/api/v1/search': json({
+        cpf_fragment_search: true,
+        items: [{ id: 31, kind: 'person', name: 'MARIA FICTICIA', natural_key: '', match: 'cpf_fragment' }],
+      }),
+    });
+    renderAt(<Harness onChange={onChange} />);
+    await userEvent.type(screen.getByRole('combobox', { name: 'De' }), 'maria 123.456.789-09');
+    const options = await screen.findAllByRole('option');
+    expect(options).toHaveLength(1);
+    expect(options[0]!.textContent).toContain('coincide com o trecho do CPF');
+    expect(calls.at(-1)!.url.searchParams.get('q')).toBe('maria 123.456.789-09');
+    expect(screen.getByText(/não uma confirmação/)).toBeTruthy();
+    await userEvent.click(options[0]!);
+    expect(onChange).toHaveBeenLastCalledWith({ id: 31, kind: 'person', name: 'MARIA FICTICIA', natural_key: '' });
+  });
 });

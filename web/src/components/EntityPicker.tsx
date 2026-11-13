@@ -53,6 +53,8 @@ export function EntityPicker({
     staleTime: 60_000,
   });
   const items = enabled && result.data ? result.data.items : [];
+  // A query carrying a CPF: candidates by the CPF's 6 middle digits.
+  const byCPF = enabled && result.data?.cpf_fragment_search === true;
   const showList = open && items.length > 0;
   const optionId = (i: number) => `${listId}-${i}`;
 
@@ -61,7 +63,7 @@ export function EntityPicker({
     setActive(-1);
     setText('');
     setQuery('');
-    onChange(item);
+    onChange({ id: item.id, kind: item.kind, name: item.name, natural_key: item.natural_key });
   };
 
   if (value) {
@@ -118,14 +120,17 @@ export function EntityPicker({
     typed && usefulLength(typed) < 3
       ? 'Digite pelo menos 3 caracteres úteis (letras ou números).'
       : !enabled || typed !== query
-        ? 'Digite parte do nome ou o CNPJ.'
+        ? 'Digite parte do nome, o CNPJ ou o CPF.'
         : result.isFetching
           ? 'Buscando…'
           : result.isError
             ? errorMessage(result.error)
             : items.length === 0
               ? 'Nenhum resultado.'
-              : `${items.length} resultado${items.length === 1 ? '' : 's'}${items.length >= LIMIT ? ' (os primeiros; refine a busca)' : ''}.`;
+              : `${items.length} resultado${items.length === 1 ? '' : 's'}${items.length >= LIMIT ? ' (os primeiros; refine a busca)' : ''}.` +
+                (byCPF
+                  ? ' Busca por CPF: as fontes publicam só os 6 dígitos do meio; são pessoas cujo CPF coincide nesse trecho, não uma confirmação. Acrescente o nome para restringir.'
+                  : '');
 
   return (
     <div className="picker">
@@ -177,6 +182,7 @@ export function EntityPicker({
                 <span className="muted small">
                   · {kindLabel(item.kind)}
                   {key && ` · ${key}`}
+                  {item.match === 'cpf_fragment' && ' · coincide com o trecho do CPF'}
                 </span>
               </li>
             );

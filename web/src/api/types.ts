@@ -133,8 +133,19 @@ export interface EntityResponse {
   possible_same: PossibleSame[];
 }
 
+export interface SearchItem extends EntityRef {
+  /**
+   * How the hit was found, when not by name or CNPJ: "cpf_fragment" is a
+   * person whose CPF fragment (the 6 middle digits) matches the CPF typed —
+   * a candidate, never a confirmation.
+   */
+  match?: 'cpf_fragment' | (string & {});
+}
+
 export interface SearchResponse {
-  items: EntityRef[];
+  items: SearchItem[];
+  /** Present (true) when the query carried a CPF: every hit is a candidate. */
+  cpf_fragment_search?: boolean;
 }
 
 export interface RelationshipsPage {

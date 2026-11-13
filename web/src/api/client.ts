@@ -38,6 +38,8 @@ const MESSAGES: Record<string, string> = {
   bad_request: 'O pedido não pôde ser entendido. Revise os dados e tente novamente.',
   query_too_short:
     'Digite pelo menos 3 caracteres úteis. Palavras muito comuns, como "LTDA", não contam; nomes curtos só são achados pelo CNPJ.',
+  invalid_cpf: 'CPF inválido: confira os dígitos.',
+  multiple_cpfs: 'A busca tem mais de um CPF. Busque um CPF de cada vez.',
   unauthorized: 'Sua sessão terminou. Abrindo o login de novo…',
   forbidden: 'Você não tem permissão para esta ação',
   not_found: 'Não encontrado.',
