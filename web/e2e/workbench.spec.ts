@@ -162,7 +162,7 @@ test('analista busca empresa, navega, acha caminho e vê a fonte', async ({ page
   await expect(page.getByRole('heading', { level: 1, name: 'Busca' })).toBeVisible();
 
   // Search by CNPJ.
-  await page.getByLabel('Nome ou CNPJ').fill('98990001');
+  await page.getByLabel('Nome, CNPJ ou CPF').fill('98990001');
   await page.keyboard.press('Enter');
   const results = page.getByRole('table', { name: /Resultados para “98990001”/ });
   await expect(results).toBeVisible();
@@ -183,6 +183,16 @@ test('analista busca empresa, navega, acha caminho e vê a fonte', async ({ page
   await results.getByRole('link', { name: ALFA }).click();
   await expect(page.getByRole('heading', { level: 1, name: ALFA })).toBeVisible();
   await expect(page.getByText('CNPJ básico')).toBeVisible();
+
+  // The entity page draws its connections right away: the lazy Cytoscape
+  // chunk, under the CSP, with the map's legend and a link to the full map.
+  const connections = page.getByRole('region', { name: 'Mapa de conexões' });
+  await expect(connections).toBeVisible();
+  await expect(
+    connections.getByRole('application', { name: new RegExp(`^Mapa de conexões de ${ALFA.replace('.', '\\.')}`) }).locator('canvas').first(),
+  ).toBeVisible();
+  await expect(connections.getByRole('list', { name: 'Linhas do gráfico' })).toContainText('tracejada: inferência');
+  await expect(connections.getByRole('link', { name: 'Abrir mapa completo' })).toHaveAttribute('href', /^\/mapa\/\d+$/);
 
   // Partners, each a "fato".
   const current = page.getByRole('table', { name: /^Vínculos atuais: \d+ carregados$/ });
@@ -346,7 +356,7 @@ test('analista busca empresa, navega, acha caminho e vê a fonte', async ({ page
   // Control group of ALFA COMÉRCIO following every corporate link: JOSÉ,
   // its direct partner and partner of the chain's top, is a final controller.
   await page.goto('/');
-  await page.getByLabel('Nome ou CNPJ').fill('98990003');
+  await page.getByLabel('Nome, CNPJ ou CPF').fill('98990003');
   await page.keyboard.press('Enter');
   await page.getByRole('table', { name: /Resultados para/ }).getByRole('link', { name: ALFA_COMERCIO }).click();
   await page.getByRole('link', { name: 'Grupo de controle' }).click();
@@ -364,7 +374,7 @@ test('analista busca empresa, navega, acha caminho e vê a fonte', async ({ page
   // Documented control of the CVM company ALFA PARTICIPAÇÕES: the chain of
   // declared controllers ends at FERNANDA; ANA is a declared co-controller.
   await page.goto('/');
-  await page.getByLabel('Nome ou CNPJ').fill('98990001');
+  await page.getByLabel('Nome, CNPJ ou CPF').fill('98990001');
   await page.keyboard.press('Enter');
   await page.getByRole('table', { name: /Resultados para/ }).getByRole('link', { name: ALFA }).click();
   await page.getByRole('link', { name: 'Grupo de controle' }).click();
@@ -392,7 +402,42 @@ test('analista busca empresa, navega, acha caminho e vê a fonte', async ({ page
     await expect(card.getByRole('definition').first()).toContainText(DATE);
   }
 
+  // Search by CPF: JOSÉ's records carry the fragment 123456. The CPF typed
+  // (synthetic, valid check digits, middle digits 123456) lists candidates,
+  // with the caveat, and never reaches the URL, the history or storage.
+  const CPF = '987.123.456-28';
+  await page.goto('/');
+  await page.getByLabel('Nome, CNPJ ou CPF').fill(`jose ${CPF}`);
+  await page.keyboard.press('Enter');
+  const candidates = page.getByRole('table', { name: /^Pessoas candidatas/ });
+  await expect(candidates).toBeVisible();
+  await expect(page.getByRole('note', { name: 'Sobre a busca por CPF' })).toContainText('6 dígitos do meio');
+  const joseHit = bodyRows(candidates).filter({ has: page.getByRole('link', { name: JOSE }) });
+  await expect(joseHit).toHaveCount(1);
+  await expect(joseHit.getByText('coincide com o trecho do CPF')).toBeVisible();
+  const here = new URL(page.url());
+  expect(here.pathname + here.search + here.hash).toBe('/');
+  const cpfDigits = /987|123\.?456/;
+  expect(JSON.stringify(await page.evaluate(() => window.history.state))).not.toMatch(cpfDigits);
+  expect(JSON.stringify(await webStorage(page))).not.toMatch(cpfDigits);
+  // The masked form alone lists every person of that fragment, JOSÉ included.
+  await page.getByLabel('Nome, CNPJ ou CPF').fill('***123456**');
+  await page.keyboard.press('Enter');
+  await expect(bodyRows(candidates).filter({ has: page.getByRole('link', { name: JOSE }) })).toHaveCount(1);
+  // Back from his page brings the CPF search back, from memory.
+  await candidates.getByRole('link', { name: JOSE }).click();
+  await expect(page.getByRole('heading', { level: 1, name: JOSE })).toBeVisible();
+  await page.goBack();
+  await expect(candidates).toBeVisible();
+  expect(new URL(page.url()).search).toBe('');
+
   expect(problems, 'CSP violations, console or page errors during the flow').toEqual([]);
+
+  // A CPF with wrong check digits is refused in plain Portuguese (the 400
+  // shows up as a console error, hence after the check above).
+  await page.getByLabel('Nome, CNPJ ou CPF').fill('987.123.456-29');
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('alert')).toContainText('CPF inválido: confira os dígitos.');
 });
 
 test('papéis: analista não vê "Coletar agora" e recebe 403; administrador vê o botão; Sair encerra a sessão', async ({

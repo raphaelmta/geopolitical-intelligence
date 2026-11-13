@@ -78,6 +78,8 @@ Sempre `{"error":"<código>"}`, sem texto interno, SQL ou pilha.
 |---|---|---|
 | `bad_request` | 400 | id, parâmetro, cursor ou corpo JSON malformado |
 | `query_too_short` | 400 | busca com menos de 3 caracteres úteis |
+| `invalid_cpf` | 400 | busca com um CPF inteiro de dígitos verificadores errados (ou todos iguais) |
+| `multiple_cpfs` | 400 | busca com dois CPFs diferentes |
 | `unauthorized` | 401 | token ausente, malformado ou recusado |
 | `forbidden` | 403 | papel insuficiente |
 | `not_found` | 404 | entidade, vínculo, job, proposta, registro ou fonte inexistente; rota desconhecida |
@@ -215,7 +217,8 @@ Exemplo (`donated_to`):
 ### `GET /api/v1/search?q=&kind=&limit=` (analyst)
 
 - `q`: até 200 caracteres. Com 8 ou 14 dígitos (pontuação ignorada) busca o CNPJ
-  básico exato; caso contrário busca por nome, sem acentos nem caixa.
+  básico exato; com um CPF, busca pelo trecho do CPF (abaixo); caso contrário
+  busca por nome, sem acentos nem caixa.
 - `kind`: opcional, `person | company | party | public_body | foreign`.
 - `limit`: padrão 20, máximo 50 (acima disso é reduzido); não numérico ou < 1 → 400.
 
@@ -225,9 +228,32 @@ Exemplo (`donated_to`):
 
 Sem resultados: `{"items": []}`. Limitações aceitas da busca por nome: casa
 palavras inteiras (e prefixo só da última palavra digitada) — não encontra um
-trecho no meio de uma palavra — e não tolera erros de digitação. Uma busca com
-um CPF completo nunca confirma a associação entre CPF e nome. A auditoria guarda
-só `kind` e a quantidade de resultados.
+trecho no meio de uma palavra — e não tolera erros de digitação. A auditoria
+guarda só `kind` e a quantidade de resultados (e, numa busca por CPF,
+`cpf_fragment_search: true`), nunca o texto buscado.
+
+**Busca por CPF** ([`docs/search.md`](search.md), "Busca por CPF"): um `q` com
+um CPF — 11 dígitos com ou sem pontuação (`123.456.789-09`, `12345678909`) ou a
+forma mascarada (`***456789**`, `***.456.789-**`), sozinho ou com palavras do
+nome — é respondido casando os **6 dígitos do meio** com o trecho de CPF dos
+registros de pessoa, o único pedaço do CPF que a plataforma guarda. Os
+resultados são **candidatos** (pessoas cujo CPF coincide nesse trecho), nunca
+uma confirmação; com palavras, só os candidatos que as têm no nome. Só
+pessoas: com `kind` diferente de `person` a resposta é vazia. Mesmo limite e
+mesma ordem da busca por nome.
+
+```json
+{"items": [{"id": 40, "kind": "person", "name": "PESSOA FICTICIA", "natural_key": "", "match": "cpf_fragment"}],
+ "cpf_fragment_search": true}
+```
+
+- `match` (só nesses resultados): `"cpf_fragment"`. Resultados de nome ou CNPJ
+  não trazem o campo, e a resposta delas não traz `cpf_fragment_search`.
+- O CPF e o trecho nunca voltam na resposta; os nomes continuam mascarados.
+- CPF inteiro com dígitos verificadores errados ou todos iguais → `400
+  invalid_cpf`; dois CPFs diferentes → `400 multiple_cpfs` (qualquer `kind`).
+  Nenhuma das duas grava auditoria.
+- Um nome que contém um CPF nunca é achado por esse CPF.
 
 ### `GET /api/v1/entities/{id}` (analyst)
 
