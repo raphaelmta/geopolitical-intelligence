@@ -62,6 +62,10 @@ same "$(cat "$out/config.json")" '{"apiBaseUrl":"http://localhost:8080","oidcAut
 same "$(csp_line "$out/default.conf")" "    add_header Content-Security-Policy \"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' http://localhost:8080 http://localhost:8081; frame-src 'none'; worker-src 'none'; object-src 'none'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'\" always;" "CSP line (default)"
 same "$(grep -c '^ *add_header' "$out/default.conf")" 7 "header count"
 same "$(grep -c '^ *location' "$out/default.conf")" 3 "location count"
+# The access log never holds a query string (a CPF typed in a link's ?q=).
+same "$(grep -c '^ *access_log /var/log/nginx/access.log geoint_noquery;$' "$out/default.conf")" 1 "access_log without query"
+grep -q "^log_format geoint_noquery .*\$uri" "$out/default.conf" || problem "log_format logs \$uri"
+! grep -q '\$request\b\|\$args\|\$query_string\|\$request_uri\|\$http_referer' "$out/default.conf" || problem "a log variable with the query"
 
 ok https://api.example.org/ https://id.example.org:8443/realms/x/ web.client_1
 same "$(cat "$out/config.json")" '{"apiBaseUrl":"https://api.example.org","oidcAuthority":"https://id.example.org:8443/realms/x","oidcClientId":"web.client_1"}' "config.json (port, trailing slash)"

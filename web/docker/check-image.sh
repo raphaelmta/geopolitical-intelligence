@@ -110,4 +110,10 @@ config=$(curl -fsS "$base/config.json")
 curl -fsSI "$base/config.json" | grep -qi '^content-type: application/json' || fail "config.json content type"
 [ "$(curl -s -o /dev/null -w '%{http_code}' "$base/entidade/12")" = 200 ] || fail "SPA fallback"
 [ "$(curl -s -o /dev/null -w '%{http_code}' "$base/assets/missing.js")" = 404 ] || fail "missing asset is not 404"
-echo "check-image: headers, /config.json and routes ok"
+# The access log holds the path, never the query string (a CPF in ?q=).
+[ "$(curl -s -o /dev/null -w '%{http_code}' "$base/?q=probe-query-98712345628&tipo=person")" = 200 ] || fail "SPA with query"
+sleep 1
+logs=$(docker logs "$name" 2>&1)
+printf '%s' "$logs" | grep -q '"GET /index.html HTTP' || fail "access log line missing (the SPA fallback logs /index.html)"
+! printf '%s' "$logs" | grep -q 'probe-query' || fail "access log holds a query string"
+echo "check-image: headers, /config.json, routes and query-free access log ok"

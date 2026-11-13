@@ -409,7 +409,8 @@ test('analista busca empresa, navega, acha caminho e vê a fonte', async ({ page
   await page.goto('/');
   await page.getByLabel('Nome, CNPJ ou CPF').fill(`jose ${CPF}`);
   await page.keyboard.press('Enter');
-  const candidates = page.getByRole('table', { name: /^Pessoas candidatas/ });
+  // Candidates only, or candidates then companies found by the words.
+  const candidates = page.getByRole('table', { name: /^(Pessoas candidatas|Resultados) para/ });
   await expect(candidates).toBeVisible();
   await expect(page.getByRole('note', { name: 'Sobre a busca por CPF' })).toContainText('6 dígitos do meio');
   const joseHit = bodyRows(candidates).filter({ has: page.getByRole('link', { name: JOSE }) });

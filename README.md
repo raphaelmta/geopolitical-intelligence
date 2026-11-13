@@ -311,6 +311,7 @@ Antes de qualquer uso por terceiros ou implantação fora da sua máquina:
 - **Keycloak** em modo de produção (`start`), atrás de TLS, com nome de host público próprio (`KC_HOSTNAME` com `https://`) e banco de dados próprio; `OIDC_ISSUER`, os endereços de redirecionamento e as origens do cliente ajustados para o endereço público da interface (HTTPS); `OIDC_DISCOVERY_URL` em HTTPS, ou numa rede privada confiável (as chaves de assinatura dos tokens chegam à API por esse endereço, e quem puder alterá-las no caminho consegue forjar tokens); `API_ALLOWED_HOSTS` com o nome público da API.
 - **Segundo fator (OTP)** exigido pelo menos para administradores, e senha do administrador do Keycloak forte e fora do repositório.
 - **Histórico do git reescrito** antes do primeiro envio a qualquer servidor ([`docs/publishing.md`](docs/publishing.md)).
+- **Busca por POST**: a Bancada manda o texto buscado (que pode ter um CPF) à API num GET, em `?q=`. Hoje nada o registra (nem a API nem o servidor web gravam a query string), mas proxies, balanceadores, WAFs e APMs costumam registrar a URL inteira. Antes de abrir, a busca precisa passar a POST, com o texto no corpo; até lá, nada na frente de `/api/v1/search` pode registrar query strings ([`docs/search.md`](docs/search.md)).
 
 Versões fixadas em [`deploy/VERSIONS.md`](deploy/VERSIONS.md); parâmetros do PostgreSQL em [`deploy/TUNING.md`](deploy/TUNING.md); formato da API em [`docs/api.md`](docs/api.md); cada fonte em [`docs/sources/`](docs/sources/).
 

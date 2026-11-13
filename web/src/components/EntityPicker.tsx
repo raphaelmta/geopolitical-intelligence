@@ -55,6 +55,7 @@ export function EntityPicker({
   const items = enabled && result.data ? result.data.items : [];
   // A query carrying a CPF: candidates by the CPF's 6 middle digits.
   const byCPF = enabled && result.data?.cpf_fragment_search === true;
+  const tooCommon = enabled && result.data?.cpf_fragment_too_common === true;
   const showList = open && items.length > 0;
   const optionId = (i: number) => `${listId}-${i}`;
 
@@ -125,11 +126,13 @@ export function EntityPicker({
           ? 'Buscando…'
           : result.isError
             ? errorMessage(result.error)
-            : items.length === 0
+            : tooCommon
+              ? 'Esse trecho de CPF é genérico demais nas fontes (aparece em milhares de registros). Acrescente o nome para buscar.'
+              : items.length === 0
               ? 'Nenhum resultado.'
               : `${items.length} resultado${items.length === 1 ? '' : 's'}${items.length >= LIMIT ? ' (os primeiros; refine a busca)' : ''}.` +
                 (byCPF
-                  ? ' Busca por CPF: as fontes publicam só os 6 dígitos do meio; são pessoas cujo CPF coincide nesse trecho, não uma confirmação. Acrescente o nome para restringir.'
+                  ? ' Busca por CPF: as fontes publicam só os 6 dígitos do meio; as marcadas são pessoas cujo CPF coincide nesse trecho, não uma confirmação. Acrescente o nome para restringir.'
                   : '');
 
   return (

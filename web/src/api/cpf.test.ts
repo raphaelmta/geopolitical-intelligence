@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { mayCarryCPF } from './cpf';
+import { mayCarryCPF, routeWithoutCPF } from './cpf';
 
 // Synthetic CPFs only (123.456.789-09 has valid check digits).
 describe('mayCarryCPF', () => {
@@ -15,6 +15,9 @@ describe('mayCarryCPF', () => {
     '***.456.789-**',
     'maria ***456789**',
     '123.456.789-09 111.222.333-96',
+    '１２３.４５６.７８９-０９',
+    'maria １２３４５６７８９０９',
+    '＊＊＊４５６７８９＊＊',
   ])('%s carrega um CPF', (q) => {
     expect(mayCarryCPF(q)).toBe(true);
   });
@@ -25,4 +28,16 @@ describe('mayCarryCPF', () => {
       expect(mayCarryCPF(q)).toBe(false);
     },
   );
+});
+
+describe('routeWithoutCPF', () => {
+  test('tira um q com CPF e mantém o resto', () => {
+    expect(routeWithoutCPF('/', '?q=maria+123.456.789-09&tipo=person', '#x')).toBe('/?tipo=person#x');
+    expect(routeWithoutCPF('/', '?q=%EF%BC%91%EF%BC%92%EF%BC%93.456.789-09', '')).toBe('/');
+  });
+  test('mantém um q sem CPF e outras rotas', () => {
+    expect(routeWithoutCPF('/', '?q=maria', '')).toBe('/?q=maria');
+    expect(routeWithoutCPF('/entidade/12', '', '')).toBe('/entidade/12');
+    expect(routeWithoutCPF('/caminhos', '?a=12&b=13', '')).toBe('/caminhos?a=12&b=13');
+  });
 });

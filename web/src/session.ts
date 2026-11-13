@@ -6,6 +6,7 @@
 // Keycloak.
 import { ErrorResponse, type User, type UserManager } from 'oidc-client-ts';
 import type { ApiAuth } from './api/client';
+import { routeWithoutCPF } from './api/cpf';
 
 /** What stops the app: expired session, identity provider down, or the API refusing a fresh session. */
 export type SessionProblem = 'expired' | 'outage' | 'rejected' | null;
@@ -34,8 +35,9 @@ export function safeRoute(v: unknown): string {
   }
 }
 
+/** The current route, without a CPF-bearing ?q= (routeWithoutCPF). */
 export function currentRoute(): string {
-  return window.location.pathname + window.location.search + window.location.hash;
+  return routeWithoutCPF(window.location.pathname, window.location.search, window.location.hash);
 }
 
 export class SessionController implements ApiAuth {

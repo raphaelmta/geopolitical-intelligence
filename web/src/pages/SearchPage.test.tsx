@@ -285,4 +285,32 @@ describe('SearchPage', () => {
     expect(details.textContent).toMatch(/candidatas, não uma confirmação/);
     expect(details.textContent).toMatch(/não vai para o endereço da página/);
   });
+
+  test('trecho de CPF genérico demais: pede o nome, sem lista', async () => {
+    mockFetch({ '/api/v1/search': json({ cpf_fragment_search: true, cpf_fragment_too_common: true, items: [] }) });
+    renderAt(<SearchPage />);
+    await search('***000001**');
+    expect(await screen.findByText(/genérico demais nas fontes/)).toBeTruthy();
+    expect(screen.getByText(/Acrescente o nome para buscar/)).toBeTruthy();
+    expect(screen.queryByRole('table')).toBeNull();
+  });
+
+  test('CPF com palavras: pessoas candidatas marcadas e empresas pelas palavras, sem marca', async () => {
+    mockFetch({
+      '/api/v1/search': json({
+        cpf_fragment_search: true,
+        items: [
+          { id: 31, kind: 'person', name: 'JOAO FICTICIO', natural_key: '', match: 'cpf_fragment' },
+          { id: 40, kind: 'company', name: 'JOAO FICTICIO ***456789**', natural_key: '12345678' },
+        ],
+      }),
+    });
+    renderAt(<SearchPage />);
+    await search('JOAO FICTICIO ***456789**');
+    const table = await screen.findByRole('table', { name: /Resultados para/ });
+    const rows = within(table).getAllByRole('row').slice(1);
+    expect(within(rows[0]!).getByText('coincide com o trecho do CPF')).toBeTruthy();
+    expect(within(rows[1]!).queryByText('coincide com o trecho do CPF')).toBeNull();
+    expect(screen.getByRole('note', { name: 'Sobre a busca por CPF' }).textContent).toMatch(/empresas da lista foram achadas só pelas palavras/);
+  });
 });

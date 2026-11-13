@@ -154,6 +154,17 @@ describe('AuthGate', () => {
     await vi.waitFor(() => expect(signin).toHaveBeenCalledTimes(1));
     expect(signin).toHaveBeenCalledWith({ state: { returnTo: '/entidade/9?a=1' } });
   });
+
+  test('sem sessão, a rota guardada para a volta nunca leva um CPF da busca', async () => {
+    // Synthetic CPF with valid check digits.
+    window.history.replaceState(null, '', '/?q=maria+123.456.789-09&tipo=person');
+    const s = session();
+    const signin = vi.spyOn(s.um, 'signinRedirect').mockResolvedValue(undefined);
+    gate(s);
+    await vi.waitFor(() => expect(signin).toHaveBeenCalledTimes(1));
+    expect(signin).toHaveBeenCalledWith({ state: { returnTo: '/?tipo=person' } });
+    expect(JSON.stringify({ ...window.sessionStorage })).not.toMatch(/456/);
+  });
 });
 
 describe('sessão recusada pela API depois de um novo login', () => {

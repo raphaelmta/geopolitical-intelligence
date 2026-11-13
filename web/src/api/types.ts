@@ -146,6 +146,11 @@ export interface SearchResponse {
   items: SearchItem[];
   /** Present (true) when the query carried a CPF: every hit is a candidate. */
   cpf_fragment_search?: boolean;
+  /**
+   * Present (true) when the CPF's fragment is in too many records to list
+   * alone: items is empty; adding name words narrows it.
+   */
+  cpf_fragment_too_common?: boolean;
 }
 
 export interface RelationshipsPage {

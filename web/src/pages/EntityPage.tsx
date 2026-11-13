@@ -31,7 +31,7 @@ import { EdgeBadge } from '../components/EdgeBadge';
 import { EdgeLegend } from '../components/EdgeLegend';
 import { ErrorNotice } from '../components/ErrorNotice';
 import { GraphPanel, graphStartsOpen } from '../components/GraphView';
-import { edgeElementId, entityIdOf, toElements } from '../components/graphStyle';
+import { edgeElementId, entityIdOf, nodeElementId, toElements } from '../components/graphStyle';
 import { MergeDialog, SplitDialog } from '../components/IdentityDialogs';
 import { ProvenancePopover } from '../components/ProvenancePopover';
 import { Timeline } from '../components/Timeline';
@@ -531,7 +531,7 @@ function ConnectionsSection({ entity }: { entity: EntityRef }) {
         <GraphPanel
           className="graph-panel--embedded"
           label={`Mapa de conexões de ${entity.name}: ${nodes.size} entidades e ${edges.length} vínculos`}
-          hint="As tabelas abaixo têm tudo o que o mapa mostra. Clique num elemento para destacá-lo; duplo clique num nó, ou Enter no nó destacado, abre a página dessa entidade."
+          hint="Clique para destacar; duplo clique ou “Abrir” para ir à página. Pelo teclado, use a lista “Entidades no mapa” logo abaixo: “destacar” marca o nó no gráfico e “Abrir” vai à página. As tabelas de vínculos têm tudo o que o mapa mostra."
           elements={elements}
           selectedId={selected}
           onSelect={setSelected}
@@ -540,8 +540,11 @@ function ConnectionsSection({ entity }: { entity: EntityRef }) {
         <div className="connections__selected" aria-live="polite">
           {selectedNode && selectedNode.id !== entity.id && (
             <p>
-              Destacado: <Link to={`/entidade/${encodeURIComponent(selectedNode.id)}`}>{selectedNode.name}</Link>{' '}
-              <span className="muted small">· {kindLabel(selectedNode.kind)}</span> ·{' '}
+              Destacado: {selectedNode.name} <span className="muted small">· {kindLabel(selectedNode.kind)}</span> ·{' '}
+              <Link to={`/entidade/${encodeURIComponent(selectedNode.id)}`} aria-label={`Abrir ${selectedNode.name}`}>
+                Abrir
+              </Link>{' '}
+              ·{' '}
               <Link to={`/mapa/${encodeURIComponent(selectedNode.id)}`} aria-label={`mapa a partir de ${selectedNode.name}`}>
                 mapa
               </Link>
@@ -556,6 +559,31 @@ function ConnectionsSection({ entity }: { entity: EntityRef }) {
             </p>
           )}
         </div>
+        <details className="connections__nodes">
+          <summary>Entidades no mapa ({nodes.size - 1})</summary>
+          <ul className="plain-list">
+            {[...nodes.values()]
+              .filter((n) => n.id !== entity.id)
+              .map((n) => (
+                <li key={n.id} className={selected === nodeElementId(n.id) ? 'is-selected' : undefined}>
+                  {n.name} <span className="muted small">· {kindLabel(n.kind)}</span>{' '}
+                  <button
+                    type="button"
+                    className="link-button"
+                    aria-pressed={selected === nodeElementId(n.id)}
+                    aria-label={`Destacar no gráfico ${n.name}`}
+                    onClick={() => setSelected(nodeElementId(n.id))}
+                  >
+                    destacar
+                  </button>{' '}
+                  ·{' '}
+                  <Link to={`/entidade/${encodeURIComponent(n.id)}`} aria-label={`Abrir ${n.name}`}>
+                    Abrir
+                  </Link>
+                </li>
+              ))}
+          </ul>
+        </details>
       </>
     );
   }

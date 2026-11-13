@@ -66,11 +66,23 @@ inteiro (TSE, CVM, Câmara) derivam o trecho na leitura. Por isso a busca por
 CPF **casa só o trecho** e devolve **candidatos**: pessoas que têm ao menos um
 registro com esse trecho. Nunca confirma que o CPF digitado é daquela pessoa.
 
-- Formas aceitas, separadas das palavras (não coladas a letras ou dígitos):
-  - 11 dígitos com ou sem a pontuação usual: `123.456.789-09`,
-    `12345678909`, `123 456 789 09` (cada separador é no máximo um entre
-    `. - /` e espaço, como na máscara);
-  - a forma mascarada das fontes: `***456789**`, `***.456.789-**`.
+- Formas aceitas:
+  - uma consulta feita só de dígitos e de `. / -` e espaços, em qualquer
+    agrupamento, com 11 dígitos: `12345678909`, `123.456.789-09`,
+    `1234 5678 909`. **Todo número de 11 dígitos é lido como CPF**: um
+    telefone, um PIS ou um RENAVAM vira uma busca por CPF (quase sempre
+    recusada como `invalid_cpf`; cerca de 1 em 100 passa na verificação e
+    busca o trecho). Antes desta mudança, eles davam uma resposta vazia;
+  - dentro de uma consulta com palavras, separadas delas (não coladas a
+    letras ou dígitos): 11 dígitos seguidos, ou `ddd?ddd?ddd?dd` com cada `?`
+    no máximo um entre `. - /` e espaço, como na máscara
+    (`maria 123.456.789-09`). Assim, `maria 11998765432` também é lida como
+    CPF, e a consulta inteira é recusada se o número não passar na
+    verificação;
+  - a forma mascarada das fontes: `***456789**`, `***.456.789-**`;
+  - dígitos, asteriscos e pontuação de largura total ou outras formas de
+    compatibilidade Unicode (`１２３.４５６.７８９-０９`) contam como os ASCII
+    (normalização NFKC antes da detecção, na API e na Bancada).
 
   Um CPF colado a uma palavra (`MARIA12345678909`) não é tirado da consulta:
   esse termo segue as regras de palavras e é descartado, como antes.
@@ -79,7 +91,9 @@ registro com esse trecho. Nunca confirma que o CPF digitado é daquela pessoa.
   com `ErrInvalidCPF` (400 `invalid_cpf`): pega erros de digitação. A forma
   mascarada não tem verificação.
 - Dois CPFs diferentes na mesma consulta: `ErrMultipleCPFs` (400
-  `multiple_cpfs`). O mesmo CPF duas vezes conta como um.
+  `multiple_cpfs`). O mesmo CPF repetido, ou dado inteiro e mascarado com o
+  mesmo trecho (`123.456.789-09 ***456789**`), conta como um. Dois CPFs
+  inteiros diferentes com o mesmo trecho são dois CPFs.
 - **Só o CPF**: as pessoas com algum registro desse trecho, na mesma ordem
   dos níveis de nome (grau desc., nome normalizado, id), com o mesmo limite
   (padrão 20, máximo 50). O grau é contado na hora, a partir dos vínculos
@@ -91,27 +105,60 @@ registro com esse trecho. Nunca confirma que o CPF digitado é daquela pessoa.
   resultado é a interseção: entre as pessoas do trecho, as que têm todas
   essas palavras no nome. Se nenhuma palavra sobrar (só palavras vazias, por
   exemplo), vale só o trecho.
+- **Empresas pelas palavras** (sem tipo): quando a consulta tem palavras
+  suficientes (3 caracteres úteis), depois das pessoas candidatas vêm as
+  empresas que essas palavras acham, pela busca por nome normal (nome exato e
+  palavras), até o limite. O CPF não é usado para elas e elas não trazem
+  `match`. Assim, colar de volta um nome exibido de MEI com o CPF mascarado
+  (`JOAO DA SILVA ***456789** ME`) ainda acha a empresa. Como as empresas
+  saem só das palavras, a lista delas é a mesma com qualquer CPF válido: o
+  CPF dentro do nome de uma empresa continua sem ser confirmado.
 - **Tipo**: com `company`, `party`, `public_body` ou `foreign` a resposta é
-  vazia (só pessoas têm trecho de CPF); com tipo nenhum ou `person`, só
-  pessoas. Um CPF inválido é recusado qualquer que seja o tipo.
+  vazia (só pessoas têm trecho de CPF; para achar uma empresa pelo nome,
+  busque sem o CPF ou sem tipo); com `person`, só pessoas. Um CPF inválido é
+  recusado qualquer que seja o tipo.
 - **Quantas pessoas dividem um trecho**: 6 dígitos são 1 milhão de valores
   para cerca de 18,7 milhões de pessoas e 29 milhões de registros na base
-  nacional, então um trecho é de dezenas de pessoas em média, e de algumas
-  centenas nos piores casos. Daí o aviso na tela e a sugestão de acrescentar
-  o nome.
-- **Desempenho**: a consulta começa pelo trecho, pelo índice parcial
-  `person_record_cpf_fragment_entity (cpf_fragment, entity_id)` (migração
-  0022), e calcula grau, nome e palavras só nesse conjunto pequeno. Nunca roda
-  a busca por nome inteira para filtrar depois. Testado com 320 pessoas num
-  mesmo trecho.
+  nacional. Medido na base nacional (2026-11), registros por trecho: mediana
+  24, percentil 99 de 109 — **tipicamente dezenas de pessoas por trecho**.
+  Mas 8 trechos passam de 1.000 registros, 1 passa de 10.000, e o maior tem
+  465.539 (um valor de preenchimento das fontes). Daí o aviso na tela, a
+  sugestão de acrescentar o nome e o limite abaixo.
+- **Limite do trecho** (`DefaultFragmentCap` = 2.000 registros,
+  `Service.SetFragmentCap`): antes de listar, uma sondagem limitada conta os
+  registros do trecho até 2.001 (lê no máximo isso do índice). Acima do
+  limite:
+  - só o CPF: nada é listado; a resposta traz `cpf_fragment_too_common:
+    true` e a Bancada pede o nome ("Esse trecho de CPF é genérico demais nas
+    fontes…");
+  - CPF e palavras (3 caracteres úteis ou mais): a busca parte do **nome**
+    (o nível de palavras de `search_person`, na ordem de `search_rank`) e
+    mantém só quem tem um registro com o trecho, conferido no mesmo índice
+    (`entity_id` está nele). Essa ordem é a das tabelas de busca, não o grau
+    contado na hora.
+- **Desempenho**: abaixo do limite, a consulta começa pelo trecho, pelo
+  índice parcial `person_record_cpf_fragment_entity (cpf_fragment,
+  entity_id)` (migração 0022), e calcula grau, nome e palavras só nesse
+  conjunto pequeno (no máximo 2.000 registros). Nunca roda a busca por nome
+  inteira para filtrar depois. Testado com 320 pessoas num mesmo trecho, e
+  com um limite baixo para os dois caminhos acima dele.
 - **O que não é guardado nem devolvido**: a resposta não repete o CPF nem o
   trecho (os nomes continuam mascarados); cada resultado traz `match:
   "cpf_fragment"` e a resposta, `cpf_fragment_search: true`. A auditoria
   guarda só o tipo, a contagem e `cpf_fragment_search: true`, nunca o texto
-  buscado. O CPF não aparece em logs (o log de acesso registra só a rota),
-  mensagens de erro, métricas ou parâmetros de tarefas. Na Bancada, uma busca
-  com CPF fica só na memória da página: nunca no endereço (`?q=`), no
-  histórico ou no armazenamento do navegador.
+  buscado (e `cpf_fragment_too_common: true` quando for o caso). O CPF não
+  aparece em logs (o log de acesso da API registra só a rota; o do servidor
+  web registra só o caminho, sem `?q=`), mensagens de erro, métricas ou
+  parâmetros de tarefas. Na Bancada, uma busca com CPF fica só na memória da
+  página: nunca no endereço (`?q=`), no histórico ou no armazenamento do
+  navegador. Um endereço que chega com um CPF em `?q=` (link antigo) tem o
+  `q` retirado na hora, e a rota guardada para a volta do login também sai
+  sem ele.
+- **Regra para o operador**: a Bancada manda a busca à API num GET, com o
+  texto em `?q=`. Nada na frente de `/api/v1/search` (proxy reverso,
+  balanceador, WAF, APM) pode registrar a query string. Antes de qualquer
+  implantação hospedada ou para terceiros, a busca precisa passar a POST, com
+  o texto no corpo (README, "Antes de abrir para clientes").
 - A proteção dos nomes continua: um nome (de empresa ou pessoa) que contém um
   CPF nunca é achado por esse CPF, porque a busca por CPF só olha o trecho dos
   registros de pessoa, nunca o nome.

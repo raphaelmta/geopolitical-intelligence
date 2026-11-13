@@ -1,6 +1,8 @@
 // API calls: attach the in-memory access token, renew once on 401, and map
 // every error to a fixed code (server text is never shown).
 
+import { routeWithoutCPF } from './cpf';
+
 export interface ApiAuth {
   /** Current access token, or null when there is none. */
   accessToken(): Promise<string | null>;
@@ -88,7 +90,7 @@ export function apiPost<T>(path: string, body: unknown): Promise<T> {
 }
 
 function currentRoute(): string {
-  return window.location.pathname + window.location.search + window.location.hash;
+  return routeWithoutCPF(window.location.pathname, window.location.search, window.location.hash);
 }
 
 async function request<T>(method: 'GET' | 'POST', path: string, body?: string): Promise<T> {

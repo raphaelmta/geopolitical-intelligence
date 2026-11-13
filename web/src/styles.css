@@ -861,7 +861,10 @@ label {
   min-height: 0;
 }
 
+/* While loading, the placeholder takes about the room of what replaces it
+   (summary, bar, canvas, tools, legend), so the tables below do not jump. */
 .graph-placeholder {
+  min-height: calc(24rem + 10rem);
   margin: 0.75rem 0 0;
   padding: 1rem;
   background: var(--surface);
@@ -869,7 +872,8 @@ label {
 }
 
 .connections__summary,
-.connections__selected {
+.connections__selected,
+.connections__nodes {
   margin: 0.5rem 0;
   overflow-wrap: anywhere;
 }
@@ -1321,9 +1325,13 @@ li.is-selected {
   }
 
   .graph-panel--embedded .graph-view__canvas,
-  .graph-panel--embedded .graph-view__loading,
+  .graph-panel--embedded .graph-view__loading {
+    height: 18rem;
+  }
+
   .graph-placeholder {
     height: 18rem;
+    min-height: calc(18rem + 12rem);
   }
 
   .modes__explain {

@@ -238,17 +238,30 @@ forma mascarada (`***456789**`, `***.456.789-**`), sozinho ou com palavras do
 nome — é respondido casando os **6 dígitos do meio** com o trecho de CPF dos
 registros de pessoa, o único pedaço do CPF que a plataforma guarda. Os
 resultados são **candidatos** (pessoas cujo CPF coincide nesse trecho), nunca
-uma confirmação; com palavras, só os candidatos que as têm no nome. Só
-pessoas: com `kind` diferente de `person` a resposta é vazia. Mesmo limite e
-mesma ordem da busca por nome.
+uma confirmação; com palavras, só os candidatos que as têm no nome. Com
+`kind=person`, só pessoas; com outro `kind`, a resposta é vazia. Sem `kind` e
+com palavras, depois dos candidatos vêm as empresas que as palavras acham
+pela busca por nome (sem `match`; o CPF não é usado para elas). Mesmo limite
+da busca por nome; ordem: grau desc., nome, id, com o grau contado na hora (pode
+diferir de `search_rank` entre duas reconstruções). Um trecho que aparece em
+mais de 2.000 registros não é listado sozinho (`cpf_fragment_too_common:
+true`, `items` vazio); com palavras, ele é buscado a partir do nome, na ordem
+das tabelas de busca.
 
 ```json
 {"items": [{"id": 40, "kind": "person", "name": "PESSOA FICTICIA", "natural_key": "", "match": "cpf_fragment"}],
  "cpf_fragment_search": true}
 ```
 
-- `match` (só nesses resultados): `"cpf_fragment"`. Resultados de nome ou CNPJ
-  não trazem o campo, e a resposta delas não traz `cpf_fragment_search`.
+- `match` (só nos candidatos): `"cpf_fragment"`. Resultados de nome ou CNPJ, e
+  as empresas achadas pelas palavras, não trazem o campo; a resposta de uma
+  busca sem CPF não traz `cpf_fragment_search`.
+- `cpf_fragment_too_common` (só quando `true`): o trecho é genérico demais
+  para ser listado sozinho; acrescente palavras do nome.
+- 11 dígitos são sempre lidos como CPF (um telefone de 11 dígitos dá, quase
+  sempre, `invalid_cpf`). O mesmo CPF inteiro e mascarado conta como um.
+- Quem opera: nada na frente desta rota pode registrar a query string (ela
+  pode levar um CPF).
 - O CPF e o trecho nunca voltam na resposta; os nomes continuam mascarados.
 - CPF inteiro com dígitos verificadores errados ou todos iguais → `400
   invalid_cpf`; dois CPFs diferentes → `400 multiple_cpfs` (qualquer `kind`).

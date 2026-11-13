@@ -210,12 +210,20 @@ printf '{"apiBaseUrl":"%s","oidcAuthority":"%s","oidcClientId":"%s"}\n' \
 {
     cat <<'NGINX'
 # Written at container start by /docker-entrypoint.d/05-web-config.sh.
+
+# Access log without query strings or Referer: a link may carry a search
+# text (a CPF) in ?q=, and nothing here may write it to disk. $uri is the
+# path alone.
+log_format geoint_noquery '$remote_addr - [$time_local] "$request_method $uri $server_protocol" $status $body_bytes_sent';
+
 server {
     listen 5173;
     server_name _;
     server_tokens off;
     root /usr/share/nginx/html;
     charset utf-8;
+    access_log /var/log/nginx/access.log geoint_noquery;
+    log_not_found off;
 
     # Security headers on every response. No add_header inside the locations
     # below: that would drop these (nginx does not merge add_header levels).

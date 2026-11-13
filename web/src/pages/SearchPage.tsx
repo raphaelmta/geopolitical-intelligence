@@ -114,6 +114,10 @@ export function SearchPage() {
   };
 
   const cpfSearch = result.isSuccess && result.data.cpf_fragment_search === true;
+  const tooCommon = result.isSuccess && result.data.cpf_fragment_too_common === true;
+  // Candidates only (no company found by the words besides them).
+  const onlyCandidates = result.isSuccess && result.data.items.every((i) => i.match === 'cpf_fragment');
+  const hasWords = usefulLength(q.normalize('NFKC').replace(/[\d*]/g, '')) > 0;
 
   return (
     <>
@@ -164,15 +168,19 @@ export function SearchPage() {
         <section aria-live="polite" className="results">
           {result.isPending && <p role="status">Buscando…</p>}
           {result.isError && <ErrorNotice error={result.error} onRetry={() => void result.refetch()} />}
-          {cpfSearch && <CPFNote />}
+          {cpfSearch && <CPFNote withCompanies={!onlyCandidates} />}
           {result.isSuccess &&
             (result.data.items.length === 0 ? (
-              cpfSearch ? (
+              tooCommon ? (
+                <p className="empty" role="status">
+                  Esse trecho de CPF é genérico demais nas fontes (aparece em milhares de registros). Acrescente o nome
+                  para buscar.
+                </p>
+              ) : cpfSearch ? (
                 <p className="empty">
                   {kind && kind !== 'person'
-                    ? `A busca por CPF só encontra pessoas; nada com o tipo ${kindLabel(kind)}.`
-                    : 'Nenhuma pessoa com esse trecho do CPF' +
-                      (usefulLength(q.replace(/[\d*]/g, '')) > 0 ? ' e essas palavras.' : '.')}
+                    ? `A busca por CPF só encontra pessoas; nada com o tipo ${kindLabel(kind)}. Procurando uma empresa cujo nome tem um CPF? Busque só pelas palavras do nome.`
+                    : 'Nenhuma pessoa com esse trecho do CPF' + (hasWords ? ' e essas palavras.' : '.')}
                 </p>
               ) : (
                 <p className="empty">
@@ -183,7 +191,7 @@ export function SearchPage() {
             ) : (
               <table className="table">
                 <caption>
-                  {cpfSearch ? 'Pessoas candidatas para “' : 'Resultados para “'}
+                  {cpfSearch && onlyCandidates ? 'Pessoas candidatas para “' : 'Resultados para “'}
                   {q}” ({result.data.items.length}
                   {result.data.items.length >= LIMIT ? ', no máximo; refine a busca' : ''})
                 </caption>
@@ -220,14 +228,17 @@ export function SearchPage() {
 }
 
 /** Shown above every CPF search's results; cannot be dismissed. */
-function CPFNote() {
+function CPFNote({ withCompanies }: { withCompanies: boolean }) {
   return (
     <div className="notice notice--caveat" role="note" aria-label="Sobre a busca por CPF">
       <p>
-        <strong>Busca por trecho do CPF.</strong> As fontes publicam só os 6 dígitos do meio do CPF. Estas são pessoas
-        cujo CPF <strong>coincide nesse trecho</strong> — não é a confirmação de que o CPF digitado seja delas, e várias
-        pessoas podem ter o mesmo trecho.
+        <strong>Busca por trecho do CPF.</strong> As fontes publicam só os 6 dígitos do meio do CPF. As pessoas marcadas
+        “coincide com o trecho do CPF” têm um CPF que <strong>coincide nesse trecho</strong> — não é a confirmação de que
+        o CPF digitado seja delas, e várias pessoas podem ter o mesmo trecho.
       </p>
+      {withCompanies && (
+        <p>As empresas da lista foram achadas só pelas palavras do nome; o CPF não é usado para elas.</p>
+      )}
       <p>Para restringir, acrescente o nome à busca (por exemplo: maria silva e o CPF).</p>
     </div>
   );
@@ -262,7 +273,9 @@ function SearchHelp() {
           ou com o nome. As fontes publicam só os <strong>6 dígitos do meio</strong> do CPF, e só eles são guardados: o
           resultado lista as pessoas cujo CPF coincide nesse trecho — <strong>candidatas, não uma confirmação</strong>.
           Várias pessoas podem ter o mesmo trecho; acrescente o nome para restringir. Um CPF com dígitos verificadores
-          errados é recusado. O CPF digitado não vai para o endereço da página nem para o histórico.
+          errados é recusado. Um número de 11 dígitos é sempre lido como CPF (um telefone, por exemplo, costuma ser
+          recusado como CPF inválido). Com palavras e sem tipo, as empresas achadas por essas palavras vêm depois das
+          pessoas. O CPF digitado não vai para o endereço da página nem para o histórico.
         </li>
         <li>
           Um CPF escrito dentro de um nome nunca é pesquisável por ele, e os nomes aparecem com o CPF mascarado
