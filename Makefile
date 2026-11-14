@@ -124,6 +124,27 @@ ONLY ?=
 measure: $(ENV_FILE)
 	@PROJECT=$(DEV_PROJECT) ENV_FILE=$(ENV_FILE) PASS=$(PASS) STEP=$(STEP) ONLY=$(ONLY) sh scripts/measure.sh
 
+# Load benchmark (scripts/bench-load.sh, docs/performance/benchmark.md): the
+# real collection path on a sample of a Receita edition (first load, then the
+# monthly re-load), in the throwaway project geoint-bench: fresh volumes, no
+# published port, torn down at the end. Results under results/bench
+# (git-ignored). make bench-sample cuts the sample (once) from an edition
+# already downloaded to BENCH_SRC: make bench-sample UF=GO. Options of
+# bench-load are environment variables (LABEL, STEP, KEEP, BENCH_PROFILE,
+# BENCH_NOCOW, ...; see the script's header).
+.PHONY: bench-sample bench-load
+UF ?= GO
+BENCH_SRC ?= data/raw/receita/2026-10
+bench-sample: cache
+	@mkdir -p data/bench/receita/$(UF)
+	docker run --rm -u $(HOST_UID):$(HOST_GID) -e HOME=/tmp -e GOFLAGS=-buildvcs=false -e CGO_ENABLED=0 \
+		-e GOCACHE=/cache/build -e GOMODCACHE=/cache/mod -v $(CURDIR):/src -v geoint-gocache:/cache -w /src \
+		golang:1.27.4-alpine3.24@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf \
+		go run ./cmd/loadbench sample -src $(BENCH_SRC) -out data/bench/receita/$(UF) -uf $(UF)
+
+bench-load: cache
+	@sh scripts/bench-load.sh
+
 # Runs the suite against throwaway postgres/nats/minio (project geoint-test),
 # always tears them down, and propagates the test exit status.
 # Focused runs: make test PKG=./internal/claims RUN=TestDelete

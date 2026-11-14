@@ -1,0 +1,82 @@
+# Load-benchmark overlay, used ONLY by `make bench-load` (scripts/bench-load.sh)
+# together with compose.yml under its own project (geoint-bench): a throwaway
+# stack with fresh volumes, torn down with them after the run. It changes only
+# what the benchmark needs (docs/performance/benchmark.md):
+#   - nothing is published on the host (ports reset; api, web and keycloak
+#     are never started);
+#   - the worker reads the Receita from the `share` service, which serves the
+#     sample editions cut by `loadbench sample` (cmd/loadbench) from
+#     BENCH_SAMPLE_DIR, with the scheduler off and the completeness rules
+#     relaxed for the sample (fewer parts, files "published" at fixed dates);
+#   - the PostgreSQL container may get a memory limit (BENCH_PG_MEM_LIMIT),
+#     which also bounds the page cache charged to it, so a small sample can
+#     reproduce the cache pressure of the national base.
+#   - no service restarts by itself (restart: "no" on every one): a bench
+#     stack that a host reboot interrupted stays down instead of coming back
+#     with half-loaded volumes and competing with the stacks in use.
+# The PostgreSQL command line is the production one (compose.yml); the PG_*
+# values come from the benchmark profile (scripts/bench-load.sh).
+services:
+  postgres:
+    restart: "no"
+    mem_limit: ${BENCH_PG_MEM_LIMIT:-64g}
+
+  nats:
+    restart: "no"
+
+  minio:
+    restart: "no"
+
+  keycloak:
+    restart: "no"
+    ports: !reset []
+
+  api:
+    restart: "no"
+    ports: !reset []
+
+  web:
+    restart: "no"
+    ports: !reset []
+
+  worker:
+    restart: "no"
+    environment:
+      SCHEDULER_ENABLED: "false"
+      RECEITA_MIN_PARTS: "1"
+      RECEITA_SETTLE_HOURS: "0"
+      # The user part stands for the share token of the real WebDAV folder.
+      RECEITA_BASE_URL: http://bench-share-token@share:8080/
+    depends_on:
+      share:
+        condition: service_healthy
+
+  # Benchmark tooling: serves the sample editions as the Receita share.
+  share:
+    image: golang:1.27.4-alpine3.24@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf
+    restart: "no"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    working_dir: /src
+    environment:
+      HOME: /tmp
+      GOFLAGS: -buildvcs=false
+      GOCACHE: /cache/build
+      GOMODCACHE: /cache/mod
+      CGO_ENABLED: "0"
+    volumes:
+      - ..:/src:ro
+      - gocache:/cache
+      - ${BENCH_SAMPLE_DIR:-../data/bench/receita/GO}:/sample:ro
+    command: ["go", "run", "./cmd/loadbench", "share", "-dir", "/sample", "-addr", ":8080"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -T 2 -O /dev/null http://127.0.0.1:8080/healthz"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
+volumes:
+  gocache:
+    external: true
+    name: geoint-gocache
