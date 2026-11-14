@@ -191,7 +191,7 @@ test('analista busca empresa, navega, acha caminho e vê a fonte', async ({ page
   await expect(
     connections.getByRole('application', { name: new RegExp(`^Mapa de conexões de ${ALFA.replace('.', '\\.')}`) }).locator('canvas').first(),
   ).toBeVisible();
-  await expect(connections.getByRole('list', { name: 'Linhas do gráfico' })).toContainText('tracejada: inferência');
+  await expect(connections.getByRole('list', { name: 'Linhas do gráfico' })).toContainText('linha tracejada: inferência');
   await expect(connections.getByRole('link', { name: 'Abrir mapa completo' })).toHaveAttribute('href', /^\/mapa\/\d+$/);
 
   // Partners, each a "fato".
@@ -278,6 +278,19 @@ test('analista busca empresa, navega, acha caminho e vê a fonte', async ({ page
   await expect(graph).toBeVisible();
   // The lazy Cytoscape chunk loaded and drew under the CSP.
   await expect(graph.locator('canvas').first()).toBeVisible();
+  // The filters are folded away by default; the details panel and the toolbar are beside the drawing.
+  const filters = page.locator('details.fold').filter({ has: page.getByText('Filtros', { exact: true }) });
+  await expect(filters).not.toHaveAttribute('open', /.*/);
+  await filters.getByText('Filtros', { exact: true }).click();
+  await expect(filters.getByRole('button', { name: 'Aplicar filtros' })).toBeVisible();
+  await filters.getByText('Filtros', { exact: true }).click();
+  await expect(page.getByRole('complementary', { name: 'Detalhes do que está selecionado' })).toContainText('Como ler o gráfico');
+  const tools = page.getByRole('group', { name: 'Controles do gráfico' });
+  await tools.getByRole('button', { name: 'Tela cheia' }).click();
+  await expect(tools.getByRole('button', { name: 'Sair da tela cheia' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(graph.locator('canvas').first()).toBeVisible();
+  await tools.getByRole('button', { name: 'Sair da tela cheia' }).click();
+  await expect(tools.getByRole('button', { name: 'Tela cheia' })).toHaveAttribute('aria-pressed', 'false');
   const mapEdges = page.getByRole('table', { name: /^Vínculos no mapa \(\d+\)$/ });
   await expect(mapEdges).toHaveAccessibleName(`Vínculos no mapa (${listed})`);
   const mapOthers = (

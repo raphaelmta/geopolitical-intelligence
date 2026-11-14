@@ -61,6 +61,9 @@ describe('SearchPage', () => {
       '/entidade/12',
     );
     expect(within(rows[1]!).getByText('Pessoa')).toBeTruthy();
+    // the kind has an icon beside its name, hidden from screen readers (the word is there)
+    expect(rows[0]!.querySelector('.kind-icon--company')!.getAttribute('aria-hidden')).toBe('true');
+    expect(rows[1]!.querySelector('.kind-icon--person')).not.toBeNull();
     expect(within(rows[1]!).getByText('PESSOA ***456789** FICTICIA')).toBeTruthy();
     expect(calls[0]!.url.searchParams.get('q')).toBe('ficticia');
     expect(calls[0]!.url.searchParams.has('kind')).toBe(false);

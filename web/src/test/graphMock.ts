@@ -14,6 +14,10 @@ export interface FakeGraph {
     restyle: ReturnType<typeof vi.fn<() => void>>;
     fit: ReturnType<typeof vi.fn<() => void>>;
     destroy: ReturnType<typeof vi.fn<() => void>>;
+    setEdgeLabels: ReturnType<typeof vi.fn<(mode: 'auto' | 'all') => void>>;
+    zoom: ReturnType<typeof vi.fn<(factor: number) => void>>;
+    arrange: ReturnType<typeof vi.fn<() => void>>;
+    resize: ReturnType<typeof vi.fn<() => void>>;
     snapshot: () => GraphSnapshot;
   };
   /** Element ids of the last setElements call. */
@@ -21,8 +25,15 @@ export interface FakeGraph {
 }
 
 export const graphs: FakeGraph[] = [];
+/** The `layout` option of every graph created. */
+export const layouts: (string | undefined)[] = [];
 
-export function createGraph(container: HTMLElement, callbacks: GraphCallbacks): GraphHandle {
+export function createGraph(
+  container: HTMLElement,
+  callbacks: GraphCallbacks,
+  options: { layout?: string } = {},
+): GraphHandle {
+  layouts.push(options.layout);
   const handle = {
     setElements: vi.fn<(els: ElementDefinition[]) => void>(),
     highlight: vi.fn<(id: string | null) => void>(),
@@ -60,4 +71,5 @@ export async function lastGraph(): Promise<FakeGraph> {
 
 export function resetGraphs() {
   graphs.length = 0;
+  layouts.length = 0;
 }

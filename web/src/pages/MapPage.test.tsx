@@ -86,9 +86,61 @@ describe('MapPage', () => {
     const els = g.handle.setElements.mock.calls.at(-1)![0];
     const byId = (id: string) => els.find((e) => e.data.id === id)!;
     expect(String(byId('e501').classes)).toContain('identity');
-    expect(String(byId('e502').data.label)).toContain('identidade: decisão de analista');
+    // the line says the kind of link only; the words about it are in the list and in the panel
+    expect(String(byId('e502').data.label)).toBe('Sociedade');
     expect(String(byId('e502').classes)).toContain('closed');
+    act(() => g.callbacks.onSelect('e502'));
+    const panel = screen.getByRole('complementary', { name: 'Detalhes do que está selecionado' });
+    expect(await within(panel).findByText('identidade: decisão de analista')).toBeTruthy();
+    expect(panel.textContent).toContain('encerrado (data desconhecida)');
     expect(String(byId('e504').classes)).not.toContain('identity');
+  });
+
+  test('filtros ficam numa dobra fechada, com o resumo na linha; a lista de nós marca "+" nos não expandidos', async () => {
+    mockFetch({
+      '/api/v1/entities/12': json(companyEntity()),
+      '/api/v1/entities/12/relationships': json({ items: rootEdges, next_cursor: '' }),
+    });
+    const { container } = renderAt(<MapPage />, at);
+    await screen.findByRole('heading', { level: 1, name: 'Mapa: EMPRESA FICTICIA A LTDA' });
+    const fold = container.querySelector('details.fold') as HTMLDetailsElement;
+    expect(fold.open).toBe(false);
+    expect(within(fold).getByText('Filtros')).toBeTruthy();
+    expect(within(fold).getByRole('status').textContent).toBeTruthy();
+    await userEvent.click(within(fold).getByText('Filtros'));
+    expect(fold.open).toBe(true);
+    // the summary line counts and says what can still be expanded
+    expect(await screen.findByText(/1 entidade ainda pode ser expandida/)).toBeTruthy();
+    const els = (await lastGraph()).handle.setElements.mock.calls.at(-1)![0];
+    const cls = (id: string) => String(els.find((e) => e.data.id === id)!.classes).split(' ');
+    expect(cls('n12')).toContain('root');
+    expect(cls('n12')).not.toContain('collapsed');
+    expect(cls('n11')).toContain('collapsed');
+  });
+
+  test('painel do gráfico: "Trazer vínculos" expande a entidade selecionada e some depois; a raiz não tem "Mapa a partir daqui"', async () => {
+    const { calls } = mockFetch({
+      '/api/v1/entities/12': json(companyEntity()),
+      '/api/v1/entities/12/relationships': json({ items: rootEdges, next_cursor: '' }),
+      '/api/v1/entities/11/relationships': json({ items: personEdges, next_cursor: '' }),
+    });
+    renderAt(<MapPage />, at);
+    const g = await lastGraph();
+    const panel = () => screen.getByRole('complementary', { name: 'Detalhes do que está selecionado' });
+    await within(await screen.findByRole('table', { name: /Vínculos no mapa/ })).findByRole('link', { name: 'PESSOA FICTICIA UM' });
+    act(() => g.callbacks.onSelect('n12'));
+    expect(within(panel()).queryByRole('button', { name: 'Trazer vínculos' })).toBeNull();
+    expect(within(panel()).queryByRole('link', { name: 'Mapa a partir daqui' })).toBeNull();
+    expect(within(panel()).getByRole('link', { name: 'Abrir página' }).getAttribute('href')).toBe('/entidade/12');
+    act(() => g.callbacks.onSelect('n11'));
+    expect(within(panel()).getByRole('link', { name: 'Mapa a partir daqui' }).getAttribute('href')).toBe('/mapa/11');
+    await userEvent.click(within(panel()).getByRole('button', { name: 'Trazer vínculos' }));
+    await vi.waitFor(() => expect(g.ids()).toEqual(['e501', 'e502', 'n11', 'n12', 'n13']));
+    expect(relCalls(calls, 11)).toHaveLength(1);
+    expect(within(panel()).queryByRole('button', { name: 'Trazer vínculos' })).toBeNull();
+    // clicking the background clears the panel
+    act(() => g.callbacks.onClear!());
+    expect(await within(panel()).findByRole('heading', { name: 'Como ler o gráfico' })).toBeTruthy();
   });
 
   test('expandir um nó busca vizinhos e acrescenta ao mapa sem apagar o que havia', async () => {

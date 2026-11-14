@@ -13,8 +13,8 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
-    // e2e/ is the Playwright suite (make e2e), not unit tests.
-    exclude: [...configDefaults.exclude, 'e2e/**'],
+    // e2e/ is the Playwright suite (make e2e), not unit tests; e2e-results/ is its scratch output.
+    exclude: [...configDefaults.exclude, 'e2e/**', 'e2e-results/**'],
     setupFiles: ['./src/test/setup.ts'],
     restoreMocks: true,
     unstubGlobals: true,

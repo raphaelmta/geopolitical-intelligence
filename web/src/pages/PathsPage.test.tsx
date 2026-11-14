@@ -6,7 +6,7 @@ import { renderAt } from '../test/render';
 import { json, mockFetch, type Call } from '../test/fetchMock';
 import { edge, personEntity } from '../test/fixtures';
 import type { Job, PathsResult } from '../api/types';
-import { lastGraph, resetGraphs } from '../test/graphMock';
+import { lastGraph, layouts, resetGraphs } from '../test/graphMock';
 
 vi.mock('../components/graphAdapter', () => import('../test/graphMock'));
 
@@ -107,6 +107,9 @@ describe('PathsPage', () => {
     }
     expect(screen.getByText('Tarefa: concluída', { exact: false })).toBeTruthy();
     expect((await lastGraph()).ids()).toEqual(['e501', 'e502', 'n11', 'n12', 'n13']);
+    // paths read left to right, and the panel beside the drawing starts with the instructions
+    expect(layouts.at(-1)).toBe('flow');
+    expect(screen.getByRole('complementary', { name: 'Detalhes do que está selecionado' })).toBeTruthy();
   });
 
   test('caminhos: mostra "parou em PT1 (601 vínculos)" quando há stopped_hubs', async () => {

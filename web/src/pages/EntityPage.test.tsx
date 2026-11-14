@@ -848,11 +848,19 @@ describe('EntityPage — mapa de conexões', () => {
     const section = await screen.findByRole('region', { name: 'Mapa de conexões' });
     const g = await lastGraph();
     act(() => g.callbacks.onSelect('n21'));
-    const highlighted = (await within(section).findByText(/^Destacado:/)).closest('p')!;
-    const link = within(highlighted).getByRole('link', { name: 'Abrir SOCIA FICTICIA' });
-    expect(link.getAttribute('href')).toBe('/entidade/21');
+    const panel = within(section).getByRole('complementary', { name: 'Detalhes do que está selecionado' });
+    expect(await within(panel).findByRole('heading', { level: 3, name: 'SOCIA FICTICIA' })).toBeTruthy();
+    expect(within(panel).getByRole('link', { name: 'Abrir a página de SOCIA FICTICIA' }).getAttribute('href')).toBe('/entidade/21');
+    expect(within(panel).getByRole('link', { name: 'mapa a partir de SOCIA FICTICIA' }).getAttribute('href')).toBe('/mapa/21');
     act(() => g.callbacks.onSelect('e2'));
-    expect(await within(section).findByText('inferência · 70%')).toBeTruthy();
+    expect(await within(panel).findByText('inferência · 70%')).toBeTruthy();
+    expect(within(panel).getByText('1 vínculo entre')).toBeTruthy();
+    // a click on the empty background drops the selection
+    act(() => g.callbacks.onClear!());
+    expect(await within(panel).findByRole('heading', { name: 'Como ler o gráfico' })).toBeTruthy();
+    // the starting entity offers the full map instead of its own page
+    act(() => g.callbacks.onSelect('n12'));
+    expect(within(panel).getByRole('link', { name: 'Explorar no mapa completo' }).getAttribute('href')).toBe('/mapa/12');
     // the starting entity itself does not navigate
     act(() => g.callbacks.onActivate('n12'));
     expect(screen.getByRole('heading', { level: 1, name: 'EMPRESA FICTICIA A LTDA' })).toBeTruthy();
@@ -875,7 +883,7 @@ describe('EntityPage — mapa de conexões', () => {
     const g = await lastGraph();
     const app = within(section).getByRole('application');
     const hint = document.getElementById(app.getAttribute('aria-describedby')!)!;
-    expect(hint.textContent).toMatch(/Clique para destacar; duplo clique ou “Abrir” para ir à página/);
+    expect(hint.textContent).toMatch(/Clique numa entidade ou numa linha para ver os detalhes ao lado; duplo clique numa entidade abre a página dela/);
     const summary = within(section).getByText('Entidades no mapa (2)');
     summary.focus();
     await userEvent.keyboard('{Enter}');
@@ -884,8 +892,9 @@ describe('EntityPage — mapa de conexões', () => {
     await userEvent.keyboard('{Enter}');
     expect(destacar.getAttribute('aria-pressed')).toBe('true');
     expect(g.handle.highlight).toHaveBeenLastCalledWith('n21');
-    const highlighted = (await within(section).findByText(/^Destacado:/)).closest('p')!;
-    expect(within(highlighted).getByRole('link', { name: 'Abrir SOCIA FICTICIA' }).getAttribute('href')).toBe('/entidade/21');
+    const panel = within(section).getByRole('complementary', { name: 'Detalhes do que está selecionado' });
+    expect(await within(panel).findByRole('heading', { level: 3, name: 'SOCIA FICTICIA' })).toBeTruthy();
+    expect(within(panel).getByRole('link', { name: 'Abrir a página de SOCIA FICTICIA' }).getAttribute('href')).toBe('/entidade/21');
     // the list has an "Abrir" per entity too
     expect(within(section).getAllByRole('link', { name: 'Abrir SOCIO INFERIDO' })).toHaveLength(1);
     // Enter on the drawing opens the highlighted node's page
