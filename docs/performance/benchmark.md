@@ -54,8 +54,12 @@ downloaded) and writes `data/bench/receita/GO/` (git-ignored):
   or several states (`UF=GO,DF`).
 
 The sample holds personal data as published by the Receita. It stays under
-`data/` (git-ignored); the harness records counts and timings only, never
-rows, and statement texts are stored with their literals removed.
+`data/` (git-ignored); the harness reads no row on purpose and records counts
+and timings, and statement texts are stored with their literals removed. It
+does copy `postgres.log` and `worker.log` into the run directory as they are
+(`results/`, git-ignored): a failing statement or a COPY error context can
+carry statement text or a row. Run directories must not be shared or
+committed.
 
 `cmd/loadbench share` serves the two folders the way the Receita share
 answers (PROPFIND, GET with Range). The worker of the bench project downloads

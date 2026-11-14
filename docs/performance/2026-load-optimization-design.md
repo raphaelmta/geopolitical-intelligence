@@ -4,9 +4,10 @@ The first national load of the Receita registry took 26 h 20 min against a
 12 h target ([`2026-national-load.md`](2026-national-load.md)). This document
 says where the time goes, measured on the load benchmark
 ([`benchmark.md`](benchmark.md)), which hypotheses hold, and what to build, as
-an ordered list of tasks. **Nothing here is implemented**: prototypes were
-throwaway patches and hand-written SQL in the benchmark database only, and
-none of them is in the repository.
+an ordered list of tasks. Tasks 1–5 are implemented
+since (each task says so); the measurements of sections 1–4 up to run 12 come
+from prototypes, throwaway patches and hand-written SQL in the benchmark
+database only, none of which is in the repository.
 
 **In one paragraph.** Three things cost almost all of the time, and none of
 them is the disk as such. (1) Identity resolution runs *after* the
@@ -22,6 +23,12 @@ goes from 1602 s to 796 s; adding a set-based replacement of the FK checks
 parallel sessions. The monthly re-load, never measured nationally, is
 dominated by rewriting every re-seen row: 723 s → 343 s with the same tasks,
 and about 140 s with a design that stops rewriting them.
+
+**Measured on the implementation.** Tasks 1–5 are implemented (the safe
+tasks 2–5). The same sample and profile, against the same-day control (1602 s
+first load, 723 s re-load), gave 778 s and 390 s: × 2.06 and × 1.85
+(section 4, run 14). Everything for tasks 6 and later, and every national
+figure, remains a projection.
 
 ## 1. How it was measured
 
@@ -169,10 +176,25 @@ parallel one.
 | + range-ordered chunks and Resolve before relationships (2, 3) | 796 | × 2.0 | 524 | × 1.38 | 7 |
 | + foreign-key checks replaced for the loader's bulk statements (6) | 326 | × 4.9 | 401 | × 1.8 | 9 |
 | + four parallel sessions (7) | 283 | × 5.7 | 343 | × 2.1 | 10 |
-| + cheap update guards and search reuse (4, 5) — *computed from the microbenchmarks, not a run* | ≈ 285 | × 5.6 | ≈ 245 | × 3.0 | — |
+| **the shipped state: tasks 2–5 as implemented — measured** (run 14; tasks 2+3 alone, as implemented: 801 s / 520 s, run 13) | **778** | **× 2.06** | **390** | **× 1.85** | 14 |
+| + cheap update guards and search reuse (4, 5) on top of 6 and 7 — *computed from the microbenchmarks, not a run* (the safe tasks alone are now the measured row above) | ≈ 285 | × 5.6 | ≈ 245 | × 3.0 | — |
 | + re-seen rows not rewritten (9) — *load phase measured (102 s), rest computed* | ≈ 285 | | ≈ 140 | × 5.1 | 11 |
 
-The first-load column of the last two rows was ≈ 215 s in the first version
+Between runs 13 and 14 the first-load difference (801 s against 778 s) is
+within run-to-run noise: tasks 4 and 5 do not change a first load, as
+predicted. The re-load gain of 520 s → 390 s is where they act (run 14,
+against the control of run 5, re-load / first load in seconds): company
+phase 113 s of which the "seen" update of `company_version` 85 s (control
+134 s), persons 9 s, early Resolve 21 s, partners 8 s, relationships 167 s
+(control 379 s), CloseUnseen 10 s, final Resolve 6 s, search 38 s (control
+90 s). First load of run 14: companies 217, persons 95, early Resolve 64,
+partners 7, relationships 281, final Resolve 18 (0 records moved), search 83.
+Run 13 (tasks 2+3): first load companies 213, persons 95, early Resolve 72,
+partners 8, relationships 298, final Resolve 17 (0 moved), search 86;
+re-load companies 158, early Resolve 30, relationships 195, CloseUnseen 11,
+final Resolve 6.5, search 89.
+
+The first-load column of the two computed rows was ≈ 215 s in the first version
 of this document, which counted search reuse (86 → 25 s) on the first load.
 A first load builds search into empty tables and has nothing to reuse, so its
 search rebuild stays a full build (≈ 86 s, plus about 9 % for the
@@ -708,7 +730,9 @@ section 7.
   is materialised once for the check and the ranking); it happens only on
   the first rebuild after the migration and after a change to the search
   functions or build statements. The sample measurement of section 2
-  (87 s) was not repeated: `make bench-load` is run by the owner.
+  (87 s) was repeated on the implementation (run 14, section 10): the search
+step of the re-load went from 90 s (control) to 38 s, and a first load, which
+has nothing to reuse, stays at 83 s (86 s in run 13, before task 5).
   **The skip is not free at national scale**: it still aggregates every
   open relationship and joins every candidate entity with the three live
   tables, about 12 % of a full build at 1 M (2.5 s of 20 s). Scaled to the
@@ -982,7 +1006,7 @@ first load did.
 | after | sample re-load (s) | national (h) |
 |---|---|---|
 | today | 723 | **≈ 5.9** (5.9–10, never measured) |
-| all safe tasks (2–5) | ≈ 405 | **≈ 3.5** (3.5–5) |
+| all safe tasks (2–5) | **390 measured** (run 14) | **≈ 3.4**, projected (3.4–5) |
 | + tasks 6, 7 | ≈ 245 | **≈ 2.3** |
 | + task 9 | ≈ 140 | **≈ 1.5** |
 
@@ -993,11 +1017,13 @@ real monthly re-load (edition 2026-11 when published), before deciding on
 task 9; (3) the search rebuild after task 5 (the reusing rebuild of a
 re-load, and the skip path of an unchanged weekly source).
 
-The search share of the re-load rows assumes the prototype's reuse factor
-(× 3.5, 87 → 25 s). The implementation measured × 2.3 at 1 M synthetic
-entities (20.4 → 8.9 s), which would put about 13 s more on the sample
-re-load (≈ 418 s instead of ≈ 405 s for the safe tasks, and the same
-+ 13 s below it); the national hours do not move at this precision.
+The search share of the rows below the safe tasks assumes the prototype's
+reuse factor (× 3.5, 87 → 25 s); the implementation measured × 2.3 at 1 M
+synthetic entities (20.4 → 8.9 s), and on the sample re-load (run 14) the
+search step took 38 s against 90 s (× 2.4). The safe-task row is that
+measurement: the sample re-load was measured at 390 s, and the national
+estimate keeps its stated uncertainty, since it is a ratio from a 3.65 %
+sample.
 
 ## 8. The existing national database
 
@@ -1023,6 +1049,41 @@ re-load (≈ 418 s instead of ≈ 405 s for the safe tasks, and the same
   catalogue-only migrations (triggers, a grant). Task 9 adds a nullable
   column (catalogue-only) and a small table; its watermark starts empty, which
   means "behave as before" until the first full load under the new code.
+
+### Upgrading an existing database
+
+What to do when this code meets a database that was loaded before it (the
+national one). All national times here are projections.
+
+1. `make up` (with the national project and env file) is the whole upgrade:
+   it stops api and worker, applies migrations 0023 and 0024 in milliseconds
+   (catalogue only, no scan of the 70 M / 50 M row tables) and starts them
+   again. Do not start it while a collection is loading: stopping the worker
+   fails that collection (the next one repairs it, as before).
+2. Both migrations give up after 5 s (`lock_timeout`) if they cannot lock a
+   table (an anti-wraparound autovacuum, an open `psql` transaction): api and
+   worker then stay stopped; end the blocker and run `make up` again. Do not
+   run it beside `make backup`.
+3. At its first start the worker rebuilds search **in full**, in the
+   background (no build version is stored yet): projected about 0.75 h, about
+   9 % more than the 41 min of today, plus a few GB of temporary space for the
+   degree table. Searches keep using the old tables until the swap;
+   collections can be queued meanwhile.
+4. From then on a collection that changes nothing searchable costs a check of
+   minutes (projected 4–6 min), not seconds; the others rebuild reusing names
+   and tokens. A change of PostgreSQL version, C library or ICU, `unaccent`
+   or of the search functions makes the next start rebuild in full once.
+5. The first monthly re-load on the existing base will gain less than the
+   sample shows: the 50.6 M existing relationships stay in hash order. All
+   national times are projections (first load about 11 h, re-load about
+   3.4 h); measure the first real ones.
+6. From now on every `ALTER TABLE` of `relationship`, `person_record` or
+   `company_version` re-installs its guard through a database-wide event
+   trigger (schema `geoint_guard`), and `ALTER TABLE … OWNER TO` on them is
+   refused. Back up with the full `pg_dump` of `make backup` (a dump of
+   schema `public` only would lose the event trigger). To go back, run the
+   previous image; do not `goose down` unless you also go back to it, and
+   then set `search_state.build_version = NULL` when returning.
 
 ## 9. Decisions needed from the owner
 
@@ -1052,6 +1113,11 @@ re-load (≈ 418 s instead of ≈ 405 s for the safe tasks, and the same
 | 10 | 20261114T135631Z-fkbypass-Y-pressure | pressure | 9 + four parallel sessions | 283 | 343 |
 | 11 | 20261114T140801Z-fkbypass-Z-pressure | pressure | 10 + re-seen rows not rewritten; FK mechanism check | 287 | load phase 102 (the prototype's collection then fails at the shrink guard, as expected) |
 | 12 | 20261114T141656Z-fkbypass-X-walsettings-pressure | pressure | 9 + `synchronous_commit=off`, `max_wal_size` 16 GB, `checkpoint_timeout` 60 min | 362 | 413 |
+| 13 | 20261114T155502Z-t2t3-pressure | pressure | **the implementation** (code at 2719738): tasks 2 + 3 | 801 | 520 |
+| 14 | 20261114T182222Z-t1-5-pressure | pressure | **the implementation** (code at a86f2b6): tasks 1–5, the shipped state. The later commit 6fe3ed2 changes one comparison in an event-trigger function and no load path | 778 | 390 |
+
+Runs 13 and 14 measure the code in the repository; runs 1–12 measure
+prototypes. Run 5 is the control of both (same day, same sample).
 
 Not measured, and why:
 
@@ -1059,8 +1125,8 @@ Not measured, and why:
 - **Run-to-run noise on the same day** (no repeated pair); the two No_COW
   pairs differ by 4.5 % and 14 %, which bounds what a single A/B can claim.
 - **Parallel sessions without task 6** (deliberately: see task 7).
-- **Task 10** and the search changes as code: task 10 is estimated from
-  statement times, task 5 from hand-written SQL on the loaded bench database.
+- **Task 10:** estimated from statement times. (Task 5 as code was measured
+  at 1 M synthetic entities and in run 14.)
 - **Task 9 end to end:** the prototype measures its load phase; its
   CloseUnseen and readers are designed, not built.
 - **TSE.** Not benchmarked; its loader has the same structure (hash buckets,

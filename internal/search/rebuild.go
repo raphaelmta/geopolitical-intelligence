@@ -307,8 +307,10 @@ func (s *Service) MarkDirty(ctx context.Context) error {
 	return nil
 }
 
-// Dirty reports whether a rebuild was requested after the one the current
-// tables come from, or the tables were never built while entities exist.
+// Dirty reports whether the live tables need a rebuild: one was requested
+// after the one they come from, more collections have finished than when it
+// started reading, they were never built while entities exist, or they were
+// built with another build version than the current one (dirtySQL).
 func (s *Service) Dirty(ctx context.Context) (bool, error) {
 	var dirty bool
 	var requested *time.Time

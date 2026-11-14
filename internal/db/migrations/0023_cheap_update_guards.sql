@@ -289,6 +289,7 @@ SELECT install_update_guard('company_version'::pg_catalog.regclass,
 -- when no schema has install_update_guard any more. The pinned search_path
 -- of the trigger functions stays: going back to the caller's search_path
 -- would reopen the hole it closes (it changes no rule).
+SET LOCAL lock_timeout = '5s';
 DROP FUNCTION install_update_guard(pg_catalog.regclass, pg_catalog.text[]);
 CREATE OR REPLACE TRIGGER relationship_guard_update BEFORE UPDATE ON relationship FOR EACH ROW EXECUTE FUNCTION guard_update(
     'src_entity_id', 'dst_entity_id', 'last_seen_collection_id', 'closed_collection_id', 'valid_to_after', 'valid_to_before');
