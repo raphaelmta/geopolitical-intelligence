@@ -386,7 +386,10 @@ Observações sobre a tabela `Naturezas`: não vem ordenada; há dois códigos d
   atualiza as propostas (o número de vínculos de cada uma), confere os
   ponteiros e marca a coleta como resolvida. Uma carga interrompida entre as
   duas passadas deixa fichas já juntadas e a coleta falhada sem a marca; a
-  resolução da coleta seguinte a completa.
+  resolução da coleta seguinte a completa. Entre a primeira passada e o fim
+  da coleta, uma proposta pendente já mostra as fichas novas: uma decisão de
+  analista nesse intervalo vale também para elas (veja "Decisão durante uma
+  coleta" em `docs/api.md`).
 - **Vínculos em lotes**: os vínculos são gravados por balde — até 1.024
   faixas consecutivas de `cnpj_basico` com quantidades parecidas de linhas de
   Sócios, recalculadas a cada carga a partir do staging

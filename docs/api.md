@@ -517,6 +517,17 @@ registro movido, a proposta continua pendente. Ausentes → comportamento antigo
 Valor malformado (texto, 0, negativo) → 400. A tentativa é auditada com os
 valores esperados (só ids).
 
+**Decisão durante uma coleta.** As cargas da Receita e do TSE resolvem as
+fichas novas antes de gravar os vínculos delas, então uma proposta pendente
+pode ganhar fichas de uma coleta que ainda está em andamento (ou que falhou
+depois dessa etapa e ainda não foi repetida). Quem decide nesse intervalo
+decide também sobre essas fichas: ao confirmar, elas são juntadas e fixadas
+pela decisão do analista, com confiança 1; ao recusar, ficam separadas e
+fixadas. A proposta decidida guarda o `connections` do momento da decisão,
+sem os vínculos que a coleta gravar depois. É o mesmo resultado de decidir
+depois que a coleta termina; e, com `expected_record_ids`, quem abriu a tela
+antes de as fichas novas entrarem recebe 409 e recarrega.
+
 ### `POST /api/v1/identity/merge` e `POST /api/v1/identity/split` (analyst)
 
 Corpo `{"record_ids": [31, 32], "reason": "mesmo endereço e sócios em comum"}`.

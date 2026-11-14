@@ -317,7 +317,11 @@ section 7.
   key order, the size bound, the same chunks from the rows in another order),
   `TestRelationshipChunksAreCompanyRanges` (Receita) and
   `TestRelationshipChunksAreCandidacyRanges` (TSE) on the fixtures; task 1's
-  goldens pass unchanged.
+  goldens pass unchanged. **Measured on the implementation** (run
+  `20261114T155502Z-t2t3-pressure`, tasks 2 and 3 together, `pressure`
+  profile): relationship phase of the first load 298 s and flat over the
+  phase (control 469 s, growing); the `partners` step, which now computes the
+  ranges, 7.8 s (5.7 s before task 2).
 
 ### Task 3 — Resolve the new records before writing the relationships
 
@@ -371,17 +375,22 @@ section 7.
   completion marker; the next collection's load is idempotent and its Resolve
   first completes the failed one (rule 11) — the state a crash *during*
   today's Resolve already leaves. Nothing is closed by this path.
-- **Result.** The same rows as today in every table; the differences are
-  `decided_at` a few minutes earlier and, between the two passes, proposals
-  whose `connections` do not yet count the new relationships (refreshed by the
-  final pass; in the prototype: "29 proposed" at the final pass, 0 moved).
+- **Result.** The same rows as today in every table **when no analyst
+  decision on a touched proposal lands between the early pass and the end of
+  the collection**; the differences are then `decided_at` a few minutes
+  earlier and, between the two passes, proposals whose `connections` do not
+  yet count the new relationships (refreshed by the final pass; in the
+  prototype: "29 proposed" at the final pass, 0 moved). With such a decision
+  the stored state differs from the old order's under the same sequence of
+  events: see "The decision window" in the "Implemented" paragraph.
 - **Tests.** Task 1 (byte-identical canonical dump); the resolver's own
   tests unchanged; a test that a crash between the two passes is completed by
   the next collection.
 - **Detail found by the prototype.** On a re-load the early pass spends 9 s
   per call in the re-point statement for 0 rows (62 k blocks read): the
   records it moves are new and have no relationship yet. Skip the re-point for
-  records whose `first_collection_id` is the collection being loaded.
+  records whose `first_collection_id` is the collection being loaded (as
+  implemented the rule is narrower: see "The re-point skip" below).
 - **Risk.** Low to medium: the resolver is delicate, but its statements do
   not change; what changes is *when* the first pass runs.
 - **Gain.** Resolve × 7.6 (727 → 79 + 16.5 s). With task 2: first load × 2.0,
@@ -409,12 +418,50 @@ section 7.
   batch). Records of earlier collections that the pass moves are re-pointed
   as always, and `Resolve` never skips: loaders without an early pass, and a
   failed collection recovered by a later one, wrote relationships before
-  their records were resolved. **One known difference in behaviour**, the one
-  "Crash behaviour" describes: after a load dies between the passes, its new
-  records are already merged or proposed. An analyst who decides a proposal
-  in that window sees those records in it, where before they only joined at
-  the next collection; no golden scenario is affected (the one with decisions
-  between an interrupted load and its repeat stops before the pass). Tests:
+  their records were resolved.
+  **The decision window.** In the old order the new records of a collection
+  entered proposals only at its final Resolve. Now they enter at the early
+  pass, so there is a window in which an analyst can decide a proposal that
+  already holds them while their relationships are not written yet. The
+  window runs from the early pass to the end of **every** collection (the
+  relationship phase and CloseUnseen: hours at national scale), not only
+  after a crash; after a load that fails past the early pass it lasts until
+  the next collection of that source ends. What differs when an analyst
+  decides a pending proposal P of key K in the window, C having added record
+  R3 to P's records R1, R2:
+  - **confirm:** one analyst merge of R1, R2 and R3, all three locked by that
+    decision with confidence 1. The old order, with the decision at the same
+    moment, gave an analyst merge of R1, R2, then at the final Resolve an
+    automatic "confirmed key" merge of R3 (unlocked, confidence
+    `1 − (n−1)/1e5`), or left R3 apart when the confirmed entity was not
+    clean or the key ambiguous;
+  - **reject:** R3 is kept apart and locked by the reject, where the old
+    order left it apart and unlocked (a rejected key is skipped);
+  - **either way** P is frozen with the `connections` it had when decided,
+    which do not count the relationships C writes afterwards (the final pass
+    refreshes pending proposals only).
+  Entity membership is the same in the clean cases. This is **accepted**
+  (owner's ruling, review I1), with no change to the resolver: the state is
+  exactly the one the old order produces when the analyst decides after the
+  collection has ended, so it is a legal state reached earlier; the decision
+  on R3 is explicit, because the proposal shows R3 and the API's decide path
+  refuses a stale view (`DecideExpecting`: an analyst who opened the proposal
+  before the early pass gets a conflict and reloads). The only cost is the
+  frozen `connections`. Pinned by `TestDecisionBetweenTheEarlyPassAndResolve`
+  (confirm and reject); no golden scenario has a decision in the window (the
+  one with decisions between an interrupted load and its repeat stops before
+  the pass). **Decision trail after a crash and a different edition:** when C
+  dies after its early pass wrote the decision of a group (with the name's
+  `n₁` fragments) and the next collection adds a fragment to that name, its
+  early pass writes a second decision with `n₂` and the new confidence, where
+  the old order wrote one, at recovery, with `n₂`. The records end the same;
+  the trail has one more, truthful, entry (what a successful C would have
+  left). **Measured on the implementation** (run
+  `20261114T155502Z-t2t3-pressure`, tasks 2 and 3, `pressure` profile): first
+  load 801 s (control 1602 s): early resolve 72 s, relationships 298 s flat,
+  final Resolve 17 s with 0 records moved; re-load 520 s (control 723 s),
+  early resolve 30 s. A `Load` that finds no early pass in its context logs
+  one line saying so. Tests:
   the goldens of task 1 pass unchanged, and `TestEquivalence` now fails
   unless every done collection ran the early pass
   (`claimstest.Pipeline.CheckEarlyPass`); `TestEarlyResolveLeavesNothingToRepoint`
@@ -470,6 +517,10 @@ section 7.
   unchanged. The result is row-for-row what a from-scratch rebuild produces.
 - **Tests.** Build both ways on the fixtures and compare the tables; a
   no-change collection leaves the generation untouched and the state clean.
+- **Note from task 3.** "Nothing changed" must count the moves of the early
+  identity pass of a collection that later **failed**: its merges are
+  committed, so an indexed person entity may have been emptied by a
+  collection that never reached its search refresh.
 - **Not proposed.** A truly incremental index: queries rely on the physical
   order of the tables by a dense global rank; a delta cannot maintain it.
   That is a redesign of search, outside this work.

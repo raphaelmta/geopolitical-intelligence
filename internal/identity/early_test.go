@@ -342,3 +342,101 @@ func TestEarlyPassWithoutResolveIsCompletedByTheNext(t *testing.T) {
 		t.Errorf("%d automatic decisions, want 1 (the early pass's merge, not repeated)", n)
 	}
 }
+
+// An analyst decides a proposal between the two passes: the early pass has
+// already put the collection's new record into the pending proposal, so the
+// decision acts on it too. (In the old order the record entered the proposal
+// only at the end of the collection: a decision taken while the collection
+// loaded covered the earlier records, and the final Resolve then joined the
+// new one to a confirmed key by an automatic merge, unlocked, with a
+// confidence below 1, or left it unlocked next to a rejected key.) The state
+// below is the one the old order gives when the analyst decides after the
+// collection ended. The decided proposal keeps the connections counted
+// before the collection's relationships existed.
+func TestDecisionBetweenTheEarlyPassAndResolve(t *testing.T) {
+	for _, confirm := range []bool{true, false} {
+		name := "reject"
+		if confirm {
+			name = "confirm"
+		}
+		t.Run(name, func(t *testing.T) {
+			f := newFixture(t, 2)
+			// An earlier, resolved collection: a name with three fragments;
+			// the two records of JOSE|111111 are proposed, with two links.
+			before := f.collect(t, receita)
+			r1 := f.person(t, before, receita, "00000001", "JOSE DA SILVA", "111111")
+			r2 := f.person(t, before, receita, "00000002", "JOSE DA SILVA", "111111")
+			f.person(t, before, receita, "00000003", "JOSE DA SILVA", "222222")
+			f.person(t, before, receita, "00000004", "JOSE DA SILVA", "333333")
+			f.resolve(t, before)
+			proposal := f.proposalID(t)
+			if n := f.count(t, `SELECT connections FROM identity_proposal WHERE id = $1 AND status = 'pending'
+				AND record_ids = $2`, proposal, []int64{r1, r2}); n != 2 {
+				t.Fatalf("fixture: proposal of the two records has %d connections, want 2", n)
+			}
+
+			// The collection being loaded: a third record of the key, the
+			// early pass, the analyst, the relationships, the final Resolve.
+			col := f.collect(t, receita)
+			r3 := f.record(t, col, receita, "00000005", "JOSE DA SILVA", "111111")
+			if res := f.resolveRecords(t, col); res.Proposed != 1 || res.AutoMerged != 0 {
+				t.Fatalf("early pass = %+v, want the proposal refreshed and nothing merged", res)
+			}
+			all := []int64{r1, r2, r3}
+			if n := f.count(t, `SELECT count(*) FROM identity_proposal WHERE id = $1 AND status = 'pending'
+				AND record_ids = $2 AND connections = 2`, proposal, all); n != 1 {
+				t.Fatal("the early pass did not put the new record into the pending proposal")
+			}
+			if err := f.r.Decide(ctx, proposal, confirm, "analyst-a"); err != nil {
+				t.Fatal(err)
+			}
+			f.relate(t, col, r3, "00000005")
+			if res := f.resolve(t, col); changes(res) != (identity.Result{}) {
+				t.Errorf("final Resolve = %+v, want no change: the key is decided", res)
+			}
+
+			action, status := "reject", "rejected"
+			if confirm {
+				action, status = "merge", "confirmed"
+			}
+			// One analyst decision over the three records; nothing automatic.
+			if n := f.count(t, `SELECT count(*) FROM identity_decision WHERE kind = 'analyst' AND action = $1
+				AND record_ids = $2`, action, all); n != 1 {
+				t.Errorf("%d analyst %s decisions over the three records, want 1", n, action)
+			}
+			if n := f.count(t, `SELECT count(*) FROM identity_decision`); n != 1 {
+				t.Errorf("%d decisions, want only the analyst's (no automatic merge of the new record)", n)
+			}
+			// Every record, the new one included, is locked by that decision
+			// with confidence 1.
+			if n := f.count(t, `SELECT count(*) FROM person_record p JOIN identity_proposal pr ON pr.id = $2
+				WHERE p.id = ANY ($1) AND p.locked_by_decision_id = pr.decision_id AND p.identity_confidence = 1`,
+				all, proposal); n != 3 {
+				t.Errorf("%d of the three records locked by the analyst's decision with confidence 1, want 3", n)
+			}
+			entities := f.count(t, `SELECT count(DISTINCT entity_id) FROM person_record WHERE id = ANY ($1)`, all)
+			if confirm && (entities != 1 || f.entityOf(t, r3) != f.entityOf(t, r1)) {
+				t.Errorf("confirmed: the records are in %d entities, want all in the entity of the first", entities)
+			}
+			if !confirm && entities != 3 {
+				t.Errorf("rejected: the records are in %d entities, want 3", entities)
+			}
+			// The decided proposal is frozen: the three records, and the
+			// connections of before the new record's relationship.
+			if n := f.count(t, `SELECT count(*) FROM identity_proposal WHERE id = $1 AND status = $2
+				AND record_ids = $3 AND connections = 2`, proposal, status, all); n != 1 {
+				t.Errorf("the %s proposal does not hold the three records with the 2 connections it had when decided", status)
+			}
+			if n := f.count(t, `SELECT count(*) FROM relationship WHERE src_record_id = $1 AND src_entity_id = $2`,
+				r3, f.entityOf(t, r3)); n != 1 {
+				t.Error("the new record's relationship does not point at its entity")
+			}
+			if n := f.stalePointers(t); n != 0 {
+				t.Errorf("%d stale relationship ends", n)
+			}
+			if n := f.count(t, `SELECT count(*) FROM identity_resolve_done WHERE collection_id = $1`, col); n != 1 {
+				t.Error("the collection is not marked resolved")
+			}
+		})
+	}
+}

@@ -413,10 +413,15 @@ func upsert(ctx context.Context, pool *pgxpool.Pool, colID int64, stats connecto
 // which the next collection's Resolve completes.
 //
 // The statistics of person_record are refreshed first: the pass joins the
-// records just inserted. Without a pass in the context nothing runs.
+// records just inserted. Without a pass in the context nothing runs, and one
+// line says so.
 func resolveNewRecords(ctx context.Context, pool *pgxpool.Pool, colID int64) error {
 	resolve := connector.ResolveRecordsFrom(ctx)
 	if resolve == nil {
+		// Never the worker's path: said aloud, so a load that lost the pass
+		// (and is back on the slow order) shows in the log.
+		slog.Info("tse: no early identity pass in the context; Resolve will merge and re-point after the relationships",
+			"collection", colID)
 		return nil
 	}
 	start := time.Now()
