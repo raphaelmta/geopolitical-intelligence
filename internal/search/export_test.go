@@ -1,6 +1,7 @@
 package search
 
 import (
+	"context"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -40,3 +41,10 @@ func ValidCPF(digits string) bool { return validCPF(digits) }
 // FragmentSQL is the query of a CPF-fragment search ($1 fragment, $2 tsquery
 // or ”, $3 limit).
 const FragmentSQL = fragmentSQL
+
+// BuildVersionInputs returns the text the build version is a digest of.
+func BuildVersionInputs(ctx context.Context, p *pgxpool.Pool) (string, error) {
+	var in string
+	err := p.QueryRow(ctx, versionInputsSQL, buildStatementsDigest).Scan(&in)
+	return in, err
+}

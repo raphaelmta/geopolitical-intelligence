@@ -152,19 +152,29 @@ const (
 		FROM search_ranked r LEFT JOIN search_other o ON o.entity_id = r.entity_id
 		WHERE r.kind IN ('E', 'A', 'O') ORDER BY r.search_rank`
 
-	// versionSQL is the build version: a digest of everything name_norm and
-	// tokens depend on — the definitions of search_norm, search_words and
-	// search_tokens as the catalogue holds them now (a migration that
-	// replaces one changes it by itself), the unaccent dictionary (extension
-	// version, options; its rules file ships with the server, hence the
-	// server version) — and $1, the digest of the build statements of this
-	// file (buildStatementsDigest).
-	versionSQL = `SELECT md5(concat_ws(E'\n', $1::text, current_setting('server_version_num'),
+	// versionInputs is what the build version is a digest of: everything
+	// name_norm and tokens depend on — the definitions of search_norm,
+	// search_words and search_tokens as the catalogue holds them now (a
+	// migration that replaces one changes it by itself), the unaccent
+	// dictionary (extension version, options; its rules file ships with the
+	// server, hence the server version), the database's locale (provider,
+	// collate, ctype, locale, the collation version recorded by the database
+	// and the one the C library or ICU reports now: upper() and the regex
+	// classes of search_norm follow the database's default collation, so a
+	// new C library under the same server version changes it too) — and $1,
+	// the digest of the build statements of this file
+	// (buildStatementsDigest). It is a scalar expression.
+	versionInputs = `concat_ws(E'\n', $1::text, current_setting('server_version_num'),
 		(SELECT extversion FROM pg_extension WHERE extname = 'unaccent'),
 		(SELECT d.dictinitoption FROM pg_ts_dict d WHERE d.oid = 'public.unaccent'::regdictionary),
+		(SELECT concat_ws(',', d.datlocprovider, d.datcollate, d.datctype, d.datlocale, d.datcollversion,
+				pg_database_collation_actual_version(d.oid))
+			FROM pg_database d WHERE d.datname = current_database()),
 		pg_get_functiondef('search_norm(text)'::regprocedure),
 		pg_get_functiondef('search_words(text)'::regprocedure),
-		pg_get_functiondef('search_tokens(text)'::regprocedure)))`
+		pg_get_functiondef('search_tokens(text)'::regprocedure))`
+	versionInputsSQL = `SELECT ` + versionInputs
+	versionSQL       = `SELECT md5(` + versionInputs + `)`
 
 	// What the live tables were built with.
 	builtWithSQL = `SELECT generation, build_version, frequent_threshold FROM search_state`
@@ -186,12 +196,17 @@ const (
 	// built from; or more collections have finished (done or failed: a
 	// final, one-way status) than when that rebuild started reading, which
 	// recovers a lost mark without trusting the clock; or the tables were
-	// never built while entities exist. Also returns the request and the
-	// finished count a rebuild starting now covers.
+	// never built while entities exist; or they were built with another
+	// build version than the current one ($1: buildStatementsDigest), e.g. a
+	// migration replaced a search function or the first start after
+	// migration 0024, so the worker's catch-up at start rebuilds them without
+	// waiting for a collection. Also returns the request and the finished
+	// count a rebuild starting now covers.
 	dirtySQL = `WITH f AS (SELECT count(*) AS n FROM collection WHERE status <> 'running')
 		SELECT coalesce(s.requested_at > coalesce(s.rebuilt_from, '-infinity'), false)
 			OR f.n > coalesce(s.finished_collections, 0)
-			OR (s.generation = 0 AND EXISTS (SELECT 1 FROM entity)),
+			OR (s.generation = 0 AND EXISTS (SELECT 1 FROM entity))
+			OR (s.generation > 0 AND s.build_version IS DISTINCT FROM md5(` + versionInputs + `)),
 		s.requested_at, f.n
 		FROM search_state s, f`
 
@@ -298,7 +313,7 @@ func (s *Service) Dirty(ctx context.Context) (bool, error) {
 	var dirty bool
 	var requested *time.Time
 	var finished int64
-	if err := s.pool.QueryRow(ctx, dirtySQL).Scan(&dirty, &requested, &finished); err != nil {
+	if err := s.pool.QueryRow(ctx, dirtySQL, buildStatementsDigest).Scan(&dirty, &requested, &finished); err != nil {
 		return false, fmt.Errorf("search: dirty: %w", err)
 	}
 	return dirty, nil
@@ -407,7 +422,7 @@ func (s *Service) rebuild(ctx context.Context, onlyIfDirty bool) (st Stats, rebu
 	var dirty bool
 	var requested *time.Time
 	var finished int64
-	if err = conn.QueryRow(ctx, dirtySQL).Scan(&dirty, &requested, &finished); err != nil {
+	if err = conn.QueryRow(ctx, dirtySQL, buildStatementsDigest).Scan(&dirty, &requested, &finished); err != nil {
 		return Stats{}, false, fmt.Errorf("search: rebuild: state: %w", err)
 	}
 	if onlyIfDirty && !dirty {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -453,4 +454,75 @@ func TestChangesOfAFailedCollectionAreNotSkipped(t *testing.T) {
 		t.Errorf("after the refresh: %v, want [%d]", got, a)
 	}
 	claimstest.CheckSearchMatchesRebuild(t, ctx, f.pool)
+}
+
+// The build version follows the database's locale: upper() and the regex
+// classes of search_norm use the default collation, so a new C library or
+// ICU under the same server version must also force a full rebuild.
+func TestBuildVersionReadsTheDatabaseLocale(t *testing.T) {
+	f := setup(t)
+	in, err := search.BuildVersionInputs(ctx, f.pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var provider, collate, ctype, locale, recorded, actual string
+	if err := f.pool.QueryRow(ctx, `SELECT d.datlocprovider::text, d.datcollate, d.datctype, coalesce(d.datlocale, ''),
+			coalesce(d.datcollversion, ''), coalesce(pg_database_collation_actual_version(d.oid), '')
+		FROM pg_database d WHERE d.datname = current_database()`).Scan(&provider, &collate, &ctype, &locale, &recorded, &actual); err != nil {
+		t.Fatal(err)
+	}
+	var parts []string
+	for _, p := range []string{provider, collate, ctype, locale, recorded, actual} {
+		if p != "" {
+			parts = append(parts, p)
+		}
+	}
+	want := strings.Join(parts, ",")
+	if !slices.Contains(strings.Split(in, "\n"), want) {
+		t.Errorf("build version inputs lack the database locale line %q:\n%s", want, in)
+	}
+	for _, fn := range []string{"search_norm", "search_words", "search_tokens"} {
+		if !strings.Contains(in, fn+"(") {
+			t.Errorf("build version inputs lack the definition of %s", fn)
+		}
+	}
+}
+
+// A build version that no longer matches (a migration replaced a search
+// function, or the first start after migration 0024) makes the state dirty
+// by itself, so the worker's catch-up at start rebuilds without waiting for
+// a collection.
+func TestBuildVersionMismatchMakesTheStateDirty(t *testing.T) {
+	f := setup(t)
+	id := f.entity(claims.KindCompany, "96000001", "ÔMEGA REUSO LTDA")
+	s := search.New(f.pool)
+	f.rebuild(s)
+	if dirty(f, s) {
+		t.Fatal("dirty right after a rebuild")
+	}
+	if _, err := f.pool.Exec(ctx, `CREATE OR REPLACE FUNCTION search_tokens(name_norm text) RETURNS tsvector
+		LANGUAGE sql IMMUTABLE PARALLEL SAFE
+		RETURN array_to_tsvector(ARRAY(SELECT DISTINCT word FROM search_words(name_norm) WHERE searched AND word <> 'omega'))`); err != nil {
+		t.Fatal(err)
+	}
+	if !dirty(f, s) {
+		t.Fatal("a replaced search function does not make the state dirty")
+	}
+	st, rebuilt, err := search.New(f.pool).RebuildIfDirty(ctx) // the worker's catch-up at start
+	if err != nil || !rebuilt || st.Reused || st.Unchanged {
+		t.Fatalf("catch-up: rebuilt=%v reused=%v unchanged=%v err=%v, want a full rebuild", rebuilt, st.Reused, st.Unchanged, err)
+	}
+	if got := liveName(f, id); got != "OMEGA REUSO LTDA / 'reuso'" {
+		t.Errorf("live row %q", got)
+	}
+	if dirty(f, s) {
+		t.Error("still dirty after the full rebuild")
+	}
+	// No version stored (the first start after migration 0024): dirty too.
+	if _, err := f.pool.Exec(ctx, `UPDATE search_state SET build_version = NULL`); err != nil {
+		t.Fatal(err)
+	}
+	if !dirty(f, s) {
+		t.Error("tables without a stored build version are not dirty")
+	}
 }

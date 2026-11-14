@@ -169,8 +169,15 @@ parallel one.
 | + range-ordered chunks and Resolve before relationships (2, 3) | 796 | × 2.0 | 524 | × 1.38 | 7 |
 | + foreign-key checks replaced for the loader's bulk statements (6) | 326 | × 4.9 | 401 | × 1.8 | 9 |
 | + four parallel sessions (7) | 283 | × 5.7 | 343 | × 2.1 | 10 |
-| + cheap update guards and search reuse (4, 5) — *computed from the microbenchmarks, not a run* | ≈ 215 | × 7.4 | ≈ 245 | × 3.0 | — |
-| + re-seen rows not rewritten (9) — *load phase measured (102 s), rest computed* | ≈ 215 | | ≈ 140 | × 5.1 | 11 |
+| + cheap update guards and search reuse (4, 5) — *computed from the microbenchmarks, not a run* | ≈ 285 | × 5.6 | ≈ 245 | × 3.0 | — |
+| + re-seen rows not rewritten (9) — *load phase measured (102 s), rest computed* | ≈ 285 | | ≈ 140 | × 5.1 | 11 |
+
+The first-load column of the last two rows was ≈ 215 s in the first version
+of this document, which counted search reuse (86 → 25 s) on the first load.
+A first load builds search into empty tables and has nothing to reuse, so its
+search rebuild stays a full build (≈ 86 s, plus about 9 % for the
+materialised degree table that task 5 adds); task 4 changes little on a first
+load. Hence ≈ 285 s.
 
 Phase detail of the measured steps (first load / re-load):
 
@@ -678,6 +685,25 @@ section 7.
   the first rebuild after the migration and after a change to the search
   functions or build statements. The sample measurement of section 2
   (87 s) was not repeated: `make bench-load` is run by the owner.
+  **The skip is not free at national scale**: it still aggregates every
+  open relationship and joins every candidate entity with the three live
+  tables, about 12 % of a full build at 1 M (2.5 s of 20 s). Scaled to the
+  national 41 min build that is roughly 4–6 min per unchanged collection
+  (projected, not measured; the hash join of about 90 M rows will spill to
+  temporary files), against about 41 min before. **Fix round 1** (review
+  of task 5): the build version also covers the database's locale
+  (`pg_database`: provider, collate, ctype, locale, recorded collation
+  version, and `pg_database_collation_actual_version`), because `upper()` and
+  the regex classes of `search_norm` follow the default collation and reused
+  values would otherwise outlive a C library or ICU change under the same
+  server version (`TestBuildVersionReadsTheDatabaseLocale`). And a stored
+  build version that differs from the current one now makes the state dirty
+  by itself (`dirtySQL`, only once the tables were built), so the worker's
+  catch-up at start rebuilds after a migration that replaces a search
+  function, and after migration 0024 itself, without waiting for a
+  collection (`TestBuildVersionMismatchMakesTheStateDirty`). A refresh with a
+  mismatching version was already never skipped (the skip requires an equal
+  version).
 
 ### Task 6 — Set-based verification instead of per-row FK checks, for the loader's bulk statements only *(owner decision D1)*
 
@@ -894,10 +920,10 @@ First national load (h; measured today: 26.3):
 |---|---|---|---|---|---|---|---|---|
 | today | 1.93 | 0.70 | 8.40 | 14.11 | 0.69 | 0.51 | **26.3** | measured |
 | tasks 2, 3 | 1.93 | 0.70 | 5.2 | 1.9 | 0.69 | 0.51 | **≈ 10.9** | 7.5–11.5 |
-| + tasks 4, 5 (**all safe tasks**) | 1.93 | 0.70 | 5.2 | 1.9 | 0.20 | 0.51 | **≈ 10.4** | 7–11 |
-| + task 6 | 0.48 | 0.22 | 1.25 | 1.25 | 0.20 | 0.51 | **≈ 3.9** | 3–5.5 |
-| + task 7 | 0.44 | 0.11 | 0.66 | 1.25 | 0.20 | 0.51 | **≈ 3.2** | 2.5–5 |
-| + task 10 (estimated, not prototyped) | 0.44 | 0.11 | 0.66 | ≈ 0.6 | 0.20 | 0.51 | **≈ 2.5** | 2–4.5 |
+| + tasks 4, 5 (**all safe tasks**) | 1.93 | 0.70 | 5.2 | 1.9 | 0.75 | 0.51 | **≈ 11.0** | 7.5–11.5 |
+| + task 6 | 0.48 | 0.22 | 1.25 | 1.25 | 0.75 | 0.51 | **≈ 4.5** | 3.5–6 |
+| + task 7 | 0.44 | 0.11 | 0.66 | 1.25 | 0.75 | 0.51 | **≈ 3.7** | 3–5.5 |
+| + task 10 (estimated, not prototyped) | 0.44 | 0.11 | 0.66 | ≈ 0.6 | 0.75 | 0.51 | **≈ 3.1** | 2.5–5 |
 
 - Relationships after task 2: 5.2 h is the sample's factor (× 1.63). The
   national phase was far more IO-bound than the sample's (347 µs per row in
@@ -907,6 +933,12 @@ First national load (h; measured today: 26.3):
 - Resolve after task 3: 1.9 h is the sample's factor (× 7.6). Bottom-up from
   national per-row costs (merge UPDATE of about 15 M record rows, 5 M
   decisions, batch machinery) gives 1.5–2.6 h.
+- Search on a first load is a **full build**: there is nothing to reuse in
+  empty tables, and the first rebuild after migration 0024 (no build version
+  stored) is full too. So task 5 does not shorten it: 0.69 h measured,
+  × 1.09 for the materialised degree table (measured at 1 M entities:
+  22.2 s against 20.4 s) ≈ 0.75 h, projected. Task 5's gain is for the
+  later collections (re-load table below, and the weekly small sources).
 - **The 12 h target is met by the safe tasks alone, with little margin at the
   pessimistic end; with task 6 it is met with a factor of two to spare.**
 
@@ -926,7 +958,14 @@ To re-measure nationally, in this order: (1) a first load after tasks 2 and 3
 (is the relationship phase flat? how long is the early Resolve?) — it decides
 whether tasks 6 and 7 are needed for the target or only welcome; (2) the first
 real monthly re-load (edition 2026-11 when published), before deciding on
-task 9; (3) the search rebuild after task 5.
+task 9; (3) the search rebuild after task 5 (the reusing rebuild of a
+re-load, and the skip path of an unchanged weekly source).
+
+The search share of the re-load rows assumes the prototype's reuse factor
+(× 3.5, 87 → 25 s). The implementation measured × 2.3 at 1 M synthetic
+entities (20.4 → 8.9 s), which would put about 13 s more on the sample
+re-load (≈ 418 s instead of ≈ 405 s for the safe tasks, and the same
++ 13 s below it); the national hours do not move at this precision.
 
 ## 8. The existing national database
 
@@ -963,7 +1002,7 @@ task 9; (3) the search rebuild after task 5.
 | D4 | Task 9: change how "last seen" is stored (watermark + unseen flag) | Decide **after** the first real monthly re-load is measured with the safe tasks; if it is then under about 4 h, the redesign may not be worth its risk |
 | D5 | Re-create the national base after tasks 2–6, or keep it | Re-create if it holds no analyst decision; otherwise keep |
 | D6 | Durability during loads (`synchronous_commit`, checkpoints) | **No change.** Measured: no gain. `fsync`, `synchronous_commit` and `full_page_writes` stay on |
-| D7 | Search freshness for the weekly small sources | Nothing to decide if task 5 is done: unchanged collections skip the rebuild in seconds |
+| D7 | Search freshness for the weekly small sources | Nothing to decide if task 5 is done: unchanged collections skip the rebuild. The skip still aggregates every open relationship and joins every entity with the search tables: about 12 % of a full build (2.5 s of 20 s at 1 M entities), so about 4–6 min nationally instead of about 41 min (projected, not measured) — minutes, not seconds |
 
 ## 10. What was run, and what could not be measured
 

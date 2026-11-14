@@ -30,7 +30,11 @@ relações abertas, somadas todas as fontes.
   the collection; rebuild skipped". A comparação é feita sobre os dados, não
   sobre um registro do que foi escrito: pega qualquer mudança, venha de onde
   vier (coleta, coleta que falhou depois da primeira passada de identidades,
-  decisão de analista entre coletas, fonte que só acrescenta vínculos). O
+  decisão de analista entre coletas, fonte que só acrescenta vínculos).
+  Essa verificação não é instantânea: soma todos os vínculos abertos e cruza
+  todas as entidades com as tabelas de busca, cerca de 12 % de uma
+  reconstrução completa. Na base nacional, estimados 4 a 6 min por coleta
+  sem mudança, em vez de cerca de 41 min (não medido). O
   nome não precisa ser comparado porque uma entidade nunca muda de nome
   (`guard_entity_update`, migração 0019).
 - **O que já foi calculado é reaproveitado.** Uma reconstrução pega o nome
@@ -41,14 +45,19 @@ relações abertas, somadas todas as fontes.
 - **Versão da reconstrução** (`search_state.build_version`, migração 0024):
   um resumo das definições atuais de `search_norm`, `search_words` e
   `search_tokens` no catálogo, do dicionário `unaccent` (versão da extensão
-  e do servidor) e do texto dos comandos da reconstrução. O reaproveitamento
+  e do servidor), do idioma (locale) do banco (provedor, collate, ctype e
+  versão da collation, a registrada e a que a biblioteca informa agora: o
+  `upper()` de `search_norm` segue a collation padrão) e do texto dos
+  comandos da reconstrução. O reaproveitamento
   e o salto só valem quando a versão guardada é igual à atual, e o salto
   também exige o mesmo limiar de palavras frequentes
   (`search_state.frequent_threshold`). Uma migração que mude a normalização
   ou a regra de palavras muda a versão sozinha, sem ninguém lembrar de
-  incrementá-la: a reconstrução seguinte calcula tudo de novo. Se a versão
-  mudar durante uma reconstrução, as tabelas montadas não entram e a
-  seguinte calcula tudo.
+  incrementá-la: a reconstrução seguinte calcula tudo de novo. Uma versão
+  guardada diferente da atual (ou nenhuma, logo depois da migração 0024)
+  também deixa as tabelas sujas, então o worker as reconstrói ao iniciar,
+  sem esperar uma coleta. Se a versão mudar durante uma reconstrução, as
+  tabelas montadas não entram e a seguinte calcula tudo.
 - Quem altera as tabelas de busca à mão (fora da troca) invalida o
   reaproveitamento: para isso, `UPDATE search_state SET build_version =
   NULL`.
