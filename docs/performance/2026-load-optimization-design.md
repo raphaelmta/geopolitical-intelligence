@@ -229,6 +229,26 @@ section 7.
   name above the threshold.
 - **Risk.** None for production (test code). **Gain.** None; it is what makes
   the other tasks reviewable.
+- **Implemented** (`internal/claimstest`; `TestEquivalence` in
+  `internal/connector/receita` and `…/tse`). "Before" is a golden file per
+  scenario (`testdata/equivalence/<scenario>.golden` in each package): the
+  full canonical dump recorded from the code before the optimisation, with
+  the hash of each section in its header. A later task must pass **without
+  rewriting them**; a failure names the differing sections and their first
+  missing / extra lines. Rewriting is for an intended, reviewed difference
+  only: `make test PKG='./internal/connector/receita
+  ./internal/connector/tse -update' RUN=TestEquivalence` (or
+  `UPDATE_GOLDEN=1`). Each scenario runs the worker's path (Load,
+  CloseUnseen, Resolve, search refresh, through `connector.Collect`) twice,
+  the second time with every id sequence moved forward: both dumps must be
+  identical. After each run the live search tables are compared row for row
+  (ids replaced by identities) with a from-scratch rebuild started from
+  empty tables (`CheckSearchMatchesRebuild`, for task 5). The dump reads
+  "last seen" only through `claimstest.LastSeen` (task 9). Two scenarios
+  interrupted *between* relationship chunks mask the relationships' first
+  collection, the one field that depends on how claims are cut into chunks
+  (task 2). TSE has no slice and no shrink guard (not a snapshot source):
+  those scenarios exist for Receita only.
 
 ### Task 2 — Range-ordered relationship chunks
 

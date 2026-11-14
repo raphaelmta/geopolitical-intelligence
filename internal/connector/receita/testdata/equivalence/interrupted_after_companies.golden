@@ -1,0 +1,275 @@
+# Canonical claims dump of an equivalence scenario (internal/claimstest).
+# Recorded from the code path current when it was written; a change meant to
+# keep the final state must pass without rewriting it. Rewrite (-update or
+# UPDATE_GOLDEN=1) only for an intended difference, reviewed in this diff.
+# second edition interrupted after the companies phase, then repeated
+# sha256 ef77a56220de70f8077c854faa40e9515cbdbb5cbd6edb5b987b1aa8358a2706
+# collection                        3 lines  sha256 9c675c34c53b5b197b78b7ccee9100d70027da4aeda3797fbabdc3a493e9cfe9
+# collection_file                   9 lines  sha256 101793918b9f467baeb057c28f76ae9efea9bd670808a62ca927b27130a067fe
+# company_version                  31 lines  sha256 7cdad50eb1f93ff0a6714a210d0d5917d6f591673d2c5ff7e343befd88bb8142
+# entity                           73 lines  sha256 aea414af45ccdf6b2ca7416eacde27d78f820617bccc453fcd153f5c297dc589
+# identity_ambiguous_key            0 lines  sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+# identity_decision                 1 lines  sha256 2749050a030bdbc057ad34703746967651a87f33603b431b76eb7be714ff0b1e
+# identity_proposal                 2 lines  sha256 063ce0cec900c58105dbcfb6ed3d73ed0eb76611a6ec962a6300c449160a1906
+# identity_resolve_done             2 lines  sha256 c0b992d9bd0a0eb0e12b5acb76c268782f216847740006e5d044814e6d85d79b
+# person_entity_without_records     3 lines  sha256 ec8ed5ac92381eab09d43078e3c6fc031820c230f321e945c2e9d5b5e854a054
+# person_record                    41 lines  sha256 68a4da826831e55e50aeb7eac6ee66a59747ae8853b24a5416ed897c55ae305b
+# relationship                     82 lines  sha256 3afa089c49af2db4603ac30875e207111c8beac8a8a193dff73d3727765b1207
+== collection ==
+receita@2041-01-01#1	done	{"full": true}
+receita@2041-02-01#1	failed	{"full": true}
+receita@2041-02-01#2	done	{"full": true}
+== collection_file ==
+receita@2041-01-01#1	Empresas.csv	raw/receita/2041-01-01/Empresas0.zip
+receita@2041-01-01#1	Estabelecimentos.csv	raw/receita/2041-01-01/Estabelecimentos0.zip
+receita@2041-01-01#1	Socios.csv	raw/receita/2041-01-01/Socios0.zip
+receita@2041-02-01#1	Empresas.csv	raw/receita/2041-02-01/Empresas0.zip
+receita@2041-02-01#1	Estabelecimentos.csv	raw/receita/2041-02-01/Estabelecimentos0.zip
+receita@2041-02-01#1	Socios.csv	raw/receita/2041-02-01/Socios0.zip
+receita@2041-02-01#2	Empresas.csv	raw/receita/2041-02-01/Empresas0.zip
+receita@2041-02-01#2	Estabelecimentos.csv	raw/receita/2041-02-01/Estabelecimentos0.zip
+receita@2041-02-01#2	Socios.csv	raw/receita/2041-02-01/Socios0.zip
+== company_version ==
+company:00000000	BANCO DO BRASIL SA	2038	05	DF	9701	6422100	02	120000000000.00	receita@2041-01-01#1	receita@2041-02-01#2	~	Empresas.csv:1
+company:98990001	ALFA PARTICIPAÇÕES S.A.	2054	05	RJ	6001	4711302	02	50000000.00	receita@2041-01-01#1	receita@2041-02-01#2	~	Empresas.csv:2
+company:98990002	ALFA INVESTIMENTOS LTDA	2062	05	MG	4123	4711302	02	1000000.00	receita@2041-01-01#1	receita@2041-02-01#2	~	Empresas.csv:3
+company:98990003	ALFA COMÉRCIO DE ALIMENTOS LTDA	2062	03	RS	8801	4711302	02	250000.00	receita@2041-01-01#1	receita@2041-02-01#2	~	Empresas.csv:4
+company:98990004	PADARIA SOL NASCENTE COMERCIO LTDA	2062	01	BA	3849	4711302	02	20000.00	receita@2041-02-01#1	receita@2041-02-01#2	~	Empresas.csv:5
+company:98990004	PADARIA SOL NASCENTE LTDA	2062	01	BA	3849	4711302	02	20000.00	receita@2041-01-01#1	receita@2041-01-01#1	receita@2041-02-01#1	Empresas.csv:5
+company:98990005	BETA SERVIÇOS DE ENGENHARIA LTDA	2062	01	SP	7107	4711302	02	80000.00	receita@2041-01-01#1	receita@2041-02-01#2	~	Empresas.csv:6
+company:98990006	GAMA TRANSPORTES LTDA	2062	01	RJ	6001	4711302	02	15000.00	receita@2041-01-01#1	receita@2041-02-01#2	~	Empresas.csv:7
+company:98990007	DELTA CONFECÇÕES LTDA	2062	01	MG	4123	4711302	02	10000.00	receita@2041-01-01#1	receita@2041-02-01#2	~	Empresas.csv:8
+company:98990008	ÉPSILON AGROPECUÁRIA LTDA	2062	03	RS	8801	4711302	02	300000.00	receita@2041-01-01#1	receita@2041-02-01#2	~	Empresas.csv:9
+company:98990009	ZETA IMPORTAÇÃO E EXPORTAÇÃO LTDA	2062	05	BA	3849	4711302	02	500000.00	receita@2041-01-01#1	receita@2041-02-01#2	~	Empresas.csv:10
+company:98990011	TETA COMÉRCIO "BOA VISTA" LTDA	2062	01	RJ	6001	4711302	02	12000.00	receita@2041-01-01#1	receita@2041-02-01#2	~	Empresas.csv:12
+company:98990012	IOTA EDUCAÇÃO INFANTIL LTDA	2062	01	MG	4123	4711302	02	30000.00	receita@2041-01-01#1	receita@2041-02-01#2	~	Empresas.csv:13
+company:98990013	CAPA MATERIAIS DE CONSTRUÇÃO LTDA	2062	01	RS	8801	4711302	02	60000.00	receita@2041-01-01#1	receita@2041-02-01#2	~	Empresas.csv:15
+company:98990014	LAMBDA CONSULTORIA LTDA	2062	01	BA	3849	4711302	02	5000.00	receita@2041-01-01#1	receita@2041-02-01#2	~	Empresas.csv:16
+company:98990015	MARIA FICTÍCIA DE SOUZA 00011122233	2135	01	SP	7107	4711302	02	1000.00	receita@2041-01-01#1	receita@2041-02-01#2	~	Empresas.csv:17
+company:98990016	ASSOCIAÇÃO DE MORADORES DO BAIRRO NOVO	3999	05	RJ	6001	4711302	02	0.00	receita@2041-01-01#1	receita@2041-02-01#2	~	Empresas.csv:18
+company:98990017	NI SUPERMERCADOS S.A.	2046	05	MG	4123	4711302	02	9000000.00	receita@2041-01-01#1	receita@2041-02-01#2	~	Empresas.csv:19
+company:98990018	OMICRON LOGÍSTICA LTDA	2062	01	RS	8801	4711302	02	70000.00	receita@2041-01-01#1	receita@2041-02-01#2	~	Empresas.csv:20
+company:98990019	PI ODONTOLOGIA LTDA	2062	01					25000.00	receita@2041-01-01#1	receita@2041-02-01#2	~	Empresas.csv:21
+company:98990020	RÔ SOFTWARE LTDA	2062	01	SP	7107	4711302	02	45000.00	receita@2041-01-01#1	receita@2041-02-01#2	~	Empresas.csv:22
+company:98990021	SIGMA AUTO PEÇAS LTDA	2062	01	RJ	6001	4711302	02	35000.00	receita@2041-01-01#1	receita@2041-02-01#2	~	Empresas.csv:23
+company:98990022	TAU REFORMAS LTDA	2062	01	MG	4123	4711302	08	8000.00	receita@2041-01-01#1	receita@2041-02-01#2	~	Empresas.csv:24
+company:98990023	ÍPSILON PAPELARIA LTDA	2062	01	RS	8801	4711302	02	6000.00	receita@2041-01-01#1	receita@2041-02-01#2	~	Empresas.csv:25
+company:98990024	FI CAFÉ E RESTAURANTE LTDA	2062	01	BA	3849	4711302	02	18000.00	receita@2041-01-01#1	receita@2041-02-01#2	~	Empresas.csv:26
+company:98990025	QUI CLÍNICA VETERINÁRIA LTDA	2062	01	SP	7107	4711302	02	22000.00	receita@2041-01-01#1	receita@2041-02-01#2	~	Empresas.csv:27
+company:98990026	PSI COMUNICAÇÃO LTDA	2062	01	RJ	6001	4711302	02	14000.00	receita@2041-01-01#1	receita@2041-02-01#2	~	Empresas.csv:28
+company:98990027	ÔMEGA MERCEARIA LTDA	2062	01	MG	4123	4711302	02	9000.00	receita@2041-01-01#1	receita@2041-02-01#2	~	Empresas.csv:29
+company:98990028	ÁGATA JOIAS LTDA	2062	01	RS	8801	4711302	02	11000.00	receita@2041-01-01#1	receita@2041-01-01#1	receita@2041-02-01#2	Empresas.csv:30
+company:98990030	ÔMICRON LOGÍSTICA LTDA	2062	01	BA	3849	4711302	02	30000.00	receita@2041-02-01#1	receita@2041-02-01#2	~	Empresas.csv:31
+company:98AB0001	ETA TECNOLOGIA LTDA	2062	01	SP	7107	4711302	02	40000.00	receita@2041-01-01#1	receita@2041-02-01#2	~	Empresas.csv:11
+== entity ==
+company:00000000	company	00000000	BANCO DO BRASIL SA	BANCO DO BRASIL SA
+company:98990001	company	98990001	ALFA PARTICIPAÇÕES S.A.	ALFA PARTICIPACOES S A
+company:98990002	company	98990002	ALFA INVESTIMENTOS LTDA	ALFA INVESTIMENTOS LTDA
+company:98990003	company	98990003	ALFA COMÉRCIO DE ALIMENTOS LTDA	ALFA COMERCIO DE ALIMENTOS LTDA
+company:98990004	company	98990004	PADARIA SOL NASCENTE LTDA	PADARIA SOL NASCENTE LTDA
+company:98990005	company	98990005	BETA SERVIÇOS DE ENGENHARIA LTDA	BETA SERVICOS DE ENGENHARIA LTDA
+company:98990006	company	98990006	GAMA TRANSPORTES LTDA	GAMA TRANSPORTES LTDA
+company:98990007	company	98990007	DELTA CONFECÇÕES LTDA	DELTA CONFECCOES LTDA
+company:98990008	company	98990008	ÉPSILON AGROPECUÁRIA LTDA	EPSILON AGROPECUARIA LTDA
+company:98990009	company	98990009	ZETA IMPORTAÇÃO E EXPORTAÇÃO LTDA	ZETA IMPORTACAO E EXPORTACAO LTDA
+company:98990011	company	98990011	TETA COMÉRCIO "BOA VISTA" LTDA	TETA COMERCIO BOA VISTA LTDA
+company:98990012	company	98990012	IOTA EDUCAÇÃO INFANTIL LTDA	IOTA EDUCACAO INFANTIL LTDA
+company:98990013	company	98990013	CAPA MATERIAIS DE CONSTRUÇÃO LTDA	CAPA MATERIAIS DE CONSTRUCAO LTDA
+company:98990014	company	98990014	LAMBDA CONSULTORIA LTDA	LAMBDA CONSULTORIA LTDA
+company:98990015	company	98990015	MARIA FICTÍCIA DE SOUZA 00011122233	MARIA FICTICIA DE SOUZA 00011122233
+company:98990016	company	98990016	ASSOCIAÇÃO DE MORADORES DO BAIRRO NOVO	ASSOCIACAO DE MORADORES DO BAIRRO NOVO
+company:98990017	company	98990017	NI SUPERMERCADOS S.A.	NI SUPERMERCADOS S A
+company:98990018	company	98990018	OMICRON LOGÍSTICA LTDA	OMICRON LOGISTICA LTDA
+company:98990019	company	98990019	PI ODONTOLOGIA LTDA	PI ODONTOLOGIA LTDA
+company:98990020	company	98990020	RÔ SOFTWARE LTDA	RO SOFTWARE LTDA
+company:98990021	company	98990021	SIGMA AUTO PEÇAS LTDA	SIGMA AUTO PECAS LTDA
+company:98990022	company	98990022	TAU REFORMAS LTDA	TAU REFORMAS LTDA
+company:98990023	company	98990023	ÍPSILON PAPELARIA LTDA	IPSILON PAPELARIA LTDA
+company:98990024	company	98990024	FI CAFÉ E RESTAURANTE LTDA	FI CAFE E RESTAURANTE LTDA
+company:98990025	company	98990025	QUI CLÍNICA VETERINÁRIA LTDA	QUI CLINICA VETERINARIA LTDA
+company:98990026	company	98990026	PSI COMUNICAÇÃO LTDA	PSI COMUNICACAO LTDA
+company:98990027	company	98990027	ÔMEGA MERCEARIA LTDA	OMEGA MERCEARIA LTDA
+company:98990028	company	98990028	ÁGATA JOIAS LTDA	AGATA JOIAS LTDA
+company:98990030	company	98990030	ÔMICRON LOGÍSTICA LTDA	OMICRON LOGISTICA LTDA
+company:98999999	company	98999999	ÔMEGA HOLDING DO BRASIL LTDA	OMEGA HOLDING DO BRASIL LTDA
+company:98AB0001	company	98AB0001	ETA TECNOLOGIA LTDA	ETA TECNOLOGIA LTDA
+foreign:receita:98990001:NORTHWIND HOLDINGS LIMITED	foreign	receita:98990001:NORTHWIND HOLDINGS LIMITED	NORTHWIND HOLDINGS LIMITED	NORTHWIND HOLDINGS LIMITED
+foreign:receita:98990009:#37	foreign	receita:98990009:#37		
+foreign:receita:98990009:#38	foreign	receita:98990009:#38		
+person[receita|98990001|CARLOS ALBERTO FICTICIO|654321]	person	~	CARLOS ALBERTO FICTÍCIO	CARLOS ALBERTO FICTICIO
+person[receita|98990001|JOSE CONCEICAO BRANDAO|123456;receita|98990003|JOSE CONCEICAO BRANDAO|123456;receita|98990005|JOSE CONCEICAO BRANDAO|123456]	person	~	JOSÉ CONCEIÇÃO BRANDÃO	JOSE CONCEICAO BRANDAO
+person[receita|98990002|ANA LUCIA PEREIRA|234567]	person	~	ANA LÚCIA PEREIRA	ANA LUCIA PEREIRA
+person[receita|98990004|ANTONIO MARCOS RIBEIRO|345678]	person	~	ANTÔNIO MARCOS RIBEIRO	ANTONIO MARCOS RIBEIRO
+person[receita|98990005|BEATRIZ GONCALVES|456789]	person	~	BEATRIZ GONÇALVES	BEATRIZ GONCALVES
+person[receita|98990006|FERNANDO DIAS LOPES|789012]	person	~	FERNANDO DIAS LOPES	FERNANDO DIAS LOPES
+person[receita|98990006||111222]	person	~		
+person[receita|98990007||111222]	person	~		
+person[receita|98990007||]	person	~		
+person[receita|98990008|GABRIELA MOURA|890123]	person	~	GABRIELA MOURA	GABRIELA MOURA
+person[receita|98990009|HELENA CASTRO|901234]	person	~	HELENA CASTRO	HELENA CASTRO
+person[receita|98990011|JULIANA PRADO|135791]	person	~	JULIANA PRADO	JULIANA PRADO
+person[receita|98990012|LUCAS HENRIQUE MENDES|567890]	person	~	LUCAS HENRIQUE MENDES	LUCAS HENRIQUE MENDES
+person[receita|98990012|PATRICIA MENDES|678901]	person	~	PATRÍCIA MENDES	PATRICIA MENDES
+person[receita|98990013|KLEBER ANDRADE|246802]	person	~	KLEBER ANDRADE	KLEBER ANDRADE
+person[receita|98990014|SIMONE TAVARES|112233]	person	~	SIMONE TAVARES	SIMONE TAVARES
+person[receita|98990016|OSVALDO QUEIROZ|223344]	person	~	OSVALDO QUEIROZ	OSVALDO QUEIROZ
+person[receita|98990017|RENATA VIEIRA|334455]	person	~	RENATA VIEIRA	RENATA VIEIRA
+person[receita|98990018|CARLA REPETIDA FICTICIA|700001]	person	~	CARLA REPETIDA FICTÍCIA	CARLA REPETIDA FICTICIA
+person[receita|98990018|SERGIO UCHOA|445566]	person	~	SÉRGIO UCHÔA	SERGIO UCHOA
+person[receita|98990018|TANIA XAVIER|556677]	person	~	TÂNIA XAVIER	TANIA XAVIER
+person[receita|98990020|VALERIA ZANETTI|667788]	person	~	VALÉRIA ZANETTI	VALERIA ZANETTI
+person[receita|98990021|CARLA REPETIDA FICTICIA|700001]	person	~	CARLA REPETIDA FICTÍCIA	CARLA REPETIDA FICTICIA
+person[receita|98990021|WAGNER BARROS|778899]	person	~	WAGNER BARROS	WAGNER BARROS
+person[receita|98990023|CARLA REPETIDA FICTICIA|700002]	person	~	CARLA REPETIDA FICTÍCIA	CARLA REPETIDA FICTICIA
+person[receita|98990023|YARA CORDEIRO|889900]	person	~	YARA CORDEIRO	YARA CORDEIRO
+person[receita|98990024|ALVARO ESTEVES|101112]	person	~	ÁLVARO ESTEVES	ALVARO ESTEVES
+person[receita|98990024|CARLA REPETIDA FICTICIA|700002]	person	~	CARLA REPETIDA FICTÍCIA	CARLA REPETIDA FICTICIA
+person[receita|98990024|ZELIA DUARTE|990011]	person	~	ZÉLIA DUARTE	ZELIA DUARTE
+person[receita|98990025|BRUNO FARIAS|121314]	person	~	BRUNO FARIAS	BRUNO FARIAS
+person[receita|98990025|CARLA REPETIDA FICTICIA|700003]	person	~	CARLA REPETIDA FICTÍCIA	CARLA REPETIDA FICTICIA
+person[receita|98990025|OTAVIO RECENTE FICTICIO|710002]	person	~	OTÁVIO RECENTE FICTÍCIO	OTAVIO RECENTE FICTICIO
+person[receita|98990026|LUCIA DOADORA EXEMPLO|888999]	person	~	LÚCIA DOADORA EXEMPLO	LUCIA DOADORA EXEMPLO
+person[receita|98990026|ROBERTO DOADOR FICTICIO|555666]	person	~	ROBERTO DOADOR FICTÍCIO	ROBERTO DOADOR FICTICIO
+person[receita|98990027|CINTIA GUEDES|141516]	person	~	CÍNTIA GUEDES	CINTIA GUEDES
+person[receita|98990027|DEBORA HOLANDA|]	person	~	DÉBORA HOLANDA	DEBORA HOLANDA
+person[receita|98990028|DEBORA HOLANDA|161718]	person	~	DÉBORA HOLANDA	DEBORA HOLANDA
+person[receita|98990030|MARCIA NOVATA FICTICIA|710001]	person	~	MÁRCIA NOVATA FICTÍCIA	MARCIA NOVATA FICTICIA
+person[receita|98AB0001|IGOR NASCIMENTO|012345]	person	~	IGOR NASCIMENTO	IGOR NASCIMENTO
+== identity_ambiguous_key ==
+== identity_decision ==
+auto	merge	[receita|98990001|JOSE CONCEICAO BRANDAO|123456;receita|98990003|JOSE CONCEICAO BRANDAO|123456;receita|98990005|JOSE CONCEICAO BRANDAO|123456]	person[receita|98990001|JOSE CONCEICAO BRANDAO|123456;receita|98990003|JOSE CONCEICAO BRANDAO|123456;receita|98990005|JOSE CONCEICAO BRANDAO|123456]	0.99999	same name and CPF fragment; 1 distinct fragment(s) for this name	resolver
+== identity_proposal ==
+CARLA REPETIDA FICTICIA|700001	[receita|98990018|CARLA REPETIDA FICTICIA|700001;receita|98990021|CARLA REPETIDA FICTICIA|700001]	3 distinct CPF fragments share this name (automatic merge up to 2)	pending	3	~	~
+CARLA REPETIDA FICTICIA|700002	[receita|98990023|CARLA REPETIDA FICTICIA|700002;receita|98990024|CARLA REPETIDA FICTICIA|700002]	3 distinct CPF fragments share this name (automatic merge up to 2)	pending	3	~	~
+== identity_resolve_done ==
+receita@2041-01-01#1
+receita@2041-02-01#2
+== person_entity_without_records ==
+JOSÉ CONCEIÇÃO BRANDÃO	JOSE CONCEICAO BRANDAO
+JOSÉ CONCEIÇÃO BRANDÃO	JOSE CONCEICAO BRANDAO
+count 2
+== person_record ==
+receita|98990001|CARLOS ALBERTO FICTICIO|654321	CARLOS ALBERTO FICTÍCIO	person[receita|98990001|CARLOS ALBERTO FICTICIO|654321]	1	~	receita@2041-01-01#1	Socios.csv:2
+receita|98990001|JOSE CONCEICAO BRANDAO|123456	JOSÉ CONCEIÇÃO BRANDÃO	person[receita|98990001|JOSE CONCEICAO BRANDAO|123456;receita|98990003|JOSE CONCEICAO BRANDAO|123456;receita|98990005|JOSE CONCEICAO BRANDAO|123456]	0.99999	~	receita@2041-01-01#1	Socios.csv:1
+receita|98990002|ANA LUCIA PEREIRA|234567	ANA LÚCIA PEREIRA	person[receita|98990002|ANA LUCIA PEREIRA|234567]	1	~	receita@2041-01-01#1	Socios.csv:4
+receita|98990003|JOSE CONCEICAO BRANDAO|123456	JOSÉ CONCEIÇÃO BRANDÃO	person[receita|98990001|JOSE CONCEICAO BRANDAO|123456;receita|98990003|JOSE CONCEICAO BRANDAO|123456;receita|98990005|JOSE CONCEICAO BRANDAO|123456]	0.99999	~	receita@2041-01-01#1	Socios.csv:6
+receita|98990004|ANTONIO MARCOS RIBEIRO|345678	ANTÔNIO MARCOS RIBEIRO	person[receita|98990004|ANTONIO MARCOS RIBEIRO|345678]	1	~	receita@2041-01-01#1	Socios.csv:7
+receita|98990005|BEATRIZ GONCALVES|456789	BEATRIZ GONÇALVES	person[receita|98990005|BEATRIZ GONCALVES|456789]	1	~	receita@2041-01-01#1	Socios.csv:9
+receita|98990005|JOSE CONCEICAO BRANDAO|123456	JOSÉ CONCEIÇÃO BRANDÃO	person[receita|98990001|JOSE CONCEICAO BRANDAO|123456;receita|98990003|JOSE CONCEICAO BRANDAO|123456;receita|98990005|JOSE CONCEICAO BRANDAO|123456]	0.99999	~	receita@2041-01-01#1	Socios.csv:8
+receita|98990006|FERNANDO DIAS LOPES|789012	FERNANDO DIAS LOPES	person[receita|98990006|FERNANDO DIAS LOPES|789012]	1	~	receita@2041-01-01#1	Socios.csv:11
+receita|98990006||111222		person[receita|98990006||111222]	1	~	receita@2041-01-01#1	Socios.csv:10
+receita|98990007||		person[receita|98990007||]	1	~	receita@2041-01-01#1	Socios.csv:13
+receita|98990007||111222		person[receita|98990007||111222]	1	~	receita@2041-01-01#1	Socios.csv:12
+receita|98990008|GABRIELA MOURA|890123	GABRIELA MOURA	person[receita|98990008|GABRIELA MOURA|890123]	1	~	receita@2041-01-01#1	Socios.csv:15
+receita|98990009|HELENA CASTRO|901234	HELENA CASTRO	person[receita|98990009|HELENA CASTRO|901234]	1	~	receita@2041-01-01#1	Socios.csv:18
+receita|98990011|JULIANA PRADO|135791	JULIANA PRADO	person[receita|98990011|JULIANA PRADO|135791]	1	~	receita@2041-01-01#1	Socios.csv:20
+receita|98990012|LUCAS HENRIQUE MENDES|567890	LUCAS HENRIQUE MENDES	person[receita|98990012|LUCAS HENRIQUE MENDES|567890]	1	~	receita@2041-01-01#1	Socios.csv:21
+receita|98990012|PATRICIA MENDES|678901	PATRÍCIA MENDES	person[receita|98990012|PATRICIA MENDES|678901]	1	~	receita@2041-01-01#1	Socios.csv:22
+receita|98990013|KLEBER ANDRADE|246802	KLEBER ANDRADE	person[receita|98990013|KLEBER ANDRADE|246802]	1	~	receita@2041-01-01#1	Socios.csv:23
+receita|98990014|SIMONE TAVARES|112233	SIMONE TAVARES	person[receita|98990014|SIMONE TAVARES|112233]	1	~	receita@2041-01-01#1	Socios.csv:24
+receita|98990016|OSVALDO QUEIROZ|223344	OSVALDO QUEIROZ	person[receita|98990016|OSVALDO QUEIROZ|223344]	1	~	receita@2041-01-01#1	Socios.csv:25
+receita|98990017|RENATA VIEIRA|334455	RENATA VIEIRA	person[receita|98990017|RENATA VIEIRA|334455]	1	~	receita@2041-01-01#1	Socios.csv:27
+receita|98990018|CARLA REPETIDA FICTICIA|700001	CARLA REPETIDA FICTÍCIA	person[receita|98990018|CARLA REPETIDA FICTICIA|700001]	1	~	receita@2041-01-01#1	Socios.csv:44
+receita|98990018|SERGIO UCHOA|445566	SÉRGIO UCHÔA	person[receita|98990018|SERGIO UCHOA|445566]	1	~	receita@2041-01-01#1	Socios.csv:28
+receita|98990018|TANIA XAVIER|556677	TÂNIA XAVIER	person[receita|98990018|TANIA XAVIER|556677]	1	~	receita@2041-01-01#1	Socios.csv:29
+receita|98990020|VALERIA ZANETTI|667788	VALÉRIA ZANETTI	person[receita|98990020|VALERIA ZANETTI|667788]	1	~	receita@2041-01-01#1	Socios.csv:31
+receita|98990021|CARLA REPETIDA FICTICIA|700001	CARLA REPETIDA FICTÍCIA	person[receita|98990021|CARLA REPETIDA FICTICIA|700001]	1	~	receita@2041-01-01#1	Socios.csv:45
+receita|98990021|WAGNER BARROS|778899	WAGNER BARROS	person[receita|98990021|WAGNER BARROS|778899]	1	~	receita@2041-01-01#1	Socios.csv:32
+receita|98990023|CARLA REPETIDA FICTICIA|700002	CARLA REPETIDA FICTÍCIA	person[receita|98990023|CARLA REPETIDA FICTICIA|700002]	1	~	receita@2041-01-01#1	Socios.csv:46
+receita|98990023|YARA CORDEIRO|889900	YARA CORDEIRO	person[receita|98990023|YARA CORDEIRO|889900]	1	~	receita@2041-01-01#1	Socios.csv:33
+receita|98990024|ALVARO ESTEVES|101112	ÁLVARO ESTEVES	person[receita|98990024|ALVARO ESTEVES|101112]	1	~	receita@2041-01-01#1	Socios.csv:35
+receita|98990024|CARLA REPETIDA FICTICIA|700002	CARLA REPETIDA FICTÍCIA	person[receita|98990024|CARLA REPETIDA FICTICIA|700002]	1	~	receita@2041-01-01#1	Socios.csv:47
+receita|98990024|ZELIA DUARTE|990011	ZÉLIA DUARTE	person[receita|98990024|ZELIA DUARTE|990011]	1	~	receita@2041-01-01#1	Socios.csv:34
+receita|98990025|BRUNO FARIAS|121314	BRUNO FARIAS	person[receita|98990025|BRUNO FARIAS|121314]	1	~	receita@2041-01-01#1	Socios.csv:36
+receita|98990025|CARLA REPETIDA FICTICIA|700003	CARLA REPETIDA FICTÍCIA	person[receita|98990025|CARLA REPETIDA FICTICIA|700003]	1	~	receita@2041-01-01#1	Socios.csv:48
+receita|98990025|OTAVIO RECENTE FICTICIO|710002	OTÁVIO RECENTE FICTÍCIO	person[receita|98990025|OTAVIO RECENTE FICTICIO|710002]	1	~	receita@2041-02-01#2	Socios.csv:49
+receita|98990026|LUCIA DOADORA EXEMPLO|888999	LÚCIA DOADORA EXEMPLO	person[receita|98990026|LUCIA DOADORA EXEMPLO|888999]	1	~	receita@2041-01-01#1	Socios.csv:43
+receita|98990026|ROBERTO DOADOR FICTICIO|555666	ROBERTO DOADOR FICTÍCIO	person[receita|98990026|ROBERTO DOADOR FICTICIO|555666]	1	~	receita@2041-01-01#1	Socios.csv:42
+receita|98990027|CINTIA GUEDES|141516	CÍNTIA GUEDES	person[receita|98990027|CINTIA GUEDES|141516]	1	~	receita@2041-01-01#1	Socios.csv:37
+receita|98990027|DEBORA HOLANDA|	DÉBORA HOLANDA	person[receita|98990027|DEBORA HOLANDA|]	1	~	receita@2041-01-01#1	Socios.csv:49
+receita|98990028|DEBORA HOLANDA|161718	DÉBORA HOLANDA	person[receita|98990028|DEBORA HOLANDA|161718]	1	~	receita@2041-01-01#1	Socios.csv:38
+receita|98990030|MARCIA NOVATA FICTICIA|710001	MÁRCIA NOVATA FICTÍCIA	person[receita|98990030|MARCIA NOVATA FICTICIA|710001]	1	~	receita@2041-02-01#2	Socios.csv:48
+receita|98AB0001|IGOR NASCIMENTO|012345	IGOR NASCIMENTO	person[receita|98AB0001|IGOR NASCIMENTO|012345]	1	~	receita@2041-01-01#1	Socios.csv:19
+== relationship ==
+administrator_of	person[receita|98990001|JOSE CONCEICAO BRANDAO|123456;receita|98990003|JOSE CONCEICAO BRANDAO|123456;receita|98990005|JOSE CONCEICAO BRANDAO|123456]	company:98990001	receita|98990001|JOSE CONCEICAO BRANDAO|123456	~	{"role": "05"}	fact	~	2010-03-15	~	~	receita@2041-02-01#2	Socios.csv:1	receita@2041-02-01#2	~
+administrator_of	person[receita|98990001|JOSE CONCEICAO BRANDAO|123456;receita|98990003|JOSE CONCEICAO BRANDAO|123456;receita|98990005|JOSE CONCEICAO BRANDAO|123456]	company:98990001	receita|98990001|JOSE CONCEICAO BRANDAO|123456	~	{"role": "49"}	fact	~	2010-03-15	2041-01-01	2041-02-05	receita@2041-01-01#1	Socios.csv:1	receita@2041-01-01#1	receita@2041-02-01#2
+administrator_of	person[receita|98990001|JOSE CONCEICAO BRANDAO|123456;receita|98990003|JOSE CONCEICAO BRANDAO|123456;receita|98990005|JOSE CONCEICAO BRANDAO|123456]	company:98990005	receita|98990005|JOSE CONCEICAO BRANDAO|123456	~	{"role": "49"}	fact	~	2018-01-01	~	~	receita@2041-01-01#1	Socios.csv:8	receita@2041-02-01#2	~
+administrator_of	person[receita|98990002|ANA LUCIA PEREIRA|234567]	company:98990002	receita|98990002|ANA LUCIA PEREIRA|234567	~	{"role": "05"}	fact	~	2011-01-01	~	~	receita@2041-01-01#1	Socios.csv:4	receita@2041-02-01#2	~
+administrator_of	person[receita|98990004|ANTONIO MARCOS RIBEIRO|345678]	company:98990004	receita|98990004|ANTONIO MARCOS RIBEIRO|345678	~	{"role": "49"}	fact	~	2015-07-20	~	~	receita@2041-01-01#1	Socios.csv:7	receita@2041-02-01#2	~
+administrator_of	person[receita|98990006|FERNANDO DIAS LOPES|789012]	company:98990006	receita|98990006|FERNANDO DIAS LOPES|789012	~	{"role": "49"}	fact	~	2005-09-12	~	~	receita@2041-01-01#1	Socios.csv:11	receita@2041-02-01#2	~
+administrator_of	person[receita|98990006||111222]	company:98990006	receita|98990006||111222	~	{"role": "16"}	fact	~	2005-09-12	~	~	receita@2041-01-01#1	Socios.csv:10	receita@2041-02-01#2	~
+administrator_of	person[receita|98990007||111222]	company:98990007	receita|98990007||111222	~	{"role": "16"}	fact	~	2005-09-12	~	~	receita@2041-01-01#1	Socios.csv:12	receita@2041-02-01#2	~
+administrator_of	person[receita|98990007||]	company:98990007	receita|98990007||	~	{"role": "16"}	fact	~	2005-09-12	~	~	receita@2041-01-01#1	Socios.csv:13	receita@2041-02-01#2	~
+administrator_of	person[receita|98990008|GABRIELA MOURA|890123]	company:98990008	receita|98990008|GABRIELA MOURA|890123	~	{"role": "49"}	fact	~	2019-02-02	~	~	receita@2041-01-01#1	Socios.csv:15	receita@2041-02-01#2	~
+administrator_of	person[receita|98990009|HELENA CASTRO|901234]	company:98990009	receita|98990009|HELENA CASTRO|901234	~	{"role": "05"}	fact	~	2014-03-03	~	~	receita@2041-01-01#1	Socios.csv:18	receita@2041-02-01#2	~
+administrator_of	person[receita|98990011|JULIANA PRADO|135791]	company:98990011	receita|98990011|JULIANA PRADO|135791	~	{"role": "49"}	fact	~	2016-06-06	~	~	receita@2041-01-01#1	Socios.csv:20	receita@2041-02-01#2	~
+administrator_of	person[receita|98990012|PATRICIA MENDES|678901]	company:98990012	receita|98990012|PATRICIA MENDES|678901	~	{"role": "49"}	fact	~	2020-01-01	~	~	receita@2041-01-01#1	Socios.csv:22	receita@2041-02-01#2	~
+administrator_of	person[receita|98990013|KLEBER ANDRADE|246802]	company:98990013	receita|98990013|KLEBER ANDRADE|246802	~	{"role": "49"}	fact	~	~	~	~	receita@2041-01-01#1	Socios.csv:23	receita@2041-02-01#2	~
+administrator_of	person[receita|98990014|SIMONE TAVARES|112233]	company:98990014	receita|98990014|SIMONE TAVARES|112233	~	{"role": "49"}	fact	~	~	~	~	receita@2041-01-01#1	Socios.csv:24	receita@2041-02-01#2	~
+administrator_of	person[receita|98990016|OSVALDO QUEIROZ|223344]	company:98990016	receita|98990016|OSVALDO QUEIROZ|223344	~	{"role": "16"}	fact	~	2009-09-09	~	~	receita@2041-01-01#1	Socios.csv:25	receita@2041-02-01#2	~
+administrator_of	person[receita|98990017|RENATA VIEIRA|334455]	company:98990017	receita|98990017|RENATA VIEIRA|334455	~	{"role": "10"}	fact	~	2017-07-07	~	~	receita@2041-01-01#1	Socios.csv:27	receita@2041-02-01#2	~
+administrator_of	person[receita|98990018|CARLA REPETIDA FICTICIA|700001]	company:98990018	receita|98990018|CARLA REPETIDA FICTICIA|700001	~	{"role": "49"}	fact	~	2020-03-03	~	~	receita@2041-01-01#1	Socios.csv:44	receita@2041-02-01#2	~
+administrator_of	person[receita|98990018|SERGIO UCHOA|445566]	company:98990018	receita|98990018|SERGIO UCHOA|445566	~	{"role": "49"}	fact	~	2012-02-02	~	~	receita@2041-01-01#1	Socios.csv:28	receita@2041-02-01#2	~
+administrator_of	person[receita|98990020|VALERIA ZANETTI|667788]	company:98990020	receita|98990020|VALERIA ZANETTI|667788	~	{"role": "49"}	fact	~	2021-01-01	~	~	receita@2041-01-01#1	Socios.csv:31	receita@2041-02-01#2	~
+administrator_of	person[receita|98990021|WAGNER BARROS|778899]	company:98990021	receita|98990021|WAGNER BARROS|778899	~	{"role": "49"}	fact	~	2008-08-08	~	~	receita@2041-01-01#1	Socios.csv:32	receita@2041-02-01#2	~
+administrator_of	person[receita|98990023|CARLA REPETIDA FICTICIA|700002]	company:98990023	receita|98990023|CARLA REPETIDA FICTICIA|700002	~	{"role": "49"}	fact	~	2020-03-03	~	~	receita@2041-01-01#1	Socios.csv:46	receita@2041-02-01#2	~
+administrator_of	person[receita|98990023|YARA CORDEIRO|889900]	company:98990023	receita|98990023|YARA CORDEIRO|889900	~	{"role": "49"}	fact	~	2011-11-11	~	~	receita@2041-01-01#1	Socios.csv:33	receita@2041-02-01#2	~
+administrator_of	person[receita|98990024|ZELIA DUARTE|990011]	company:98990024	receita|98990024|ZELIA DUARTE|990011	~	{"role": "49"}	fact	~	2013-03-03	~	~	receita@2041-01-01#1	Socios.csv:34	receita@2041-02-01#2	~
+administrator_of	person[receita|98990025|BRUNO FARIAS|121314]	company:98990025	receita|98990025|BRUNO FARIAS|121314	~	{"role": "49"}	fact	~	2022-02-02	~	~	receita@2041-01-01#1	Socios.csv:36	receita@2041-02-01#2	~
+administrator_of	person[receita|98990025|CARLA REPETIDA FICTICIA|700003]	company:98990025	receita|98990025|CARLA REPETIDA FICTICIA|700003	~	{"role": "49"}	fact	~	2020-03-03	~	~	receita@2041-01-01#1	Socios.csv:48	receita@2041-02-01#2	~
+administrator_of	person[receita|98990026|ROBERTO DOADOR FICTICIO|555666]	company:98990026	receita|98990026|ROBERTO DOADOR FICTICIO|555666	~	{"role": "49"}	fact	~	2018-05-05	~	~	receita@2041-01-01#1	Socios.csv:42	receita@2041-02-01#2	~
+administrator_of	person[receita|98990027|CINTIA GUEDES|141516]	company:98990027	receita|98990027|CINTIA GUEDES|141516	~	{"role": "49"}	fact	~	2010-01-10	2041-01-01	2041-02-05	receita@2041-01-01#1	Socios.csv:37	receita@2041-01-01#1	receita@2041-02-01#2
+administrator_of	person[receita|98990028|DEBORA HOLANDA|161718]	company:98990028	receita|98990028|DEBORA HOLANDA|161718	~	{"role": "49"}	fact	~	2019-09-19	2041-01-01	2041-02-05	receita@2041-01-01#1	Socios.csv:38	receita@2041-01-01#1	receita@2041-02-01#2
+administrator_of	person[receita|98990030|MARCIA NOVATA FICTICIA|710001]	company:98990030	receita|98990030|MARCIA NOVATA FICTICIA|710001	~	{"role": "49"}	fact	~	2030-12-15	~	~	receita@2041-02-01#2	Socios.csv:48	receita@2041-02-01#2	~
+administrator_of	person[receita|98AB0001|IGOR NASCIMENTO|012345]	company:98AB0001	receita|98AB0001|IGOR NASCIMENTO|012345	~	{"role": "49"}	fact	~	2026-08-01	~	~	receita@2041-01-01#1	Socios.csv:19	receita@2041-02-01#2	~
+legal_rep_of	person[receita|98990001|CARLOS ALBERTO FICTICIO|654321]	foreign:receita:98990001:NORTHWIND HOLDINGS LIMITED	receita|98990001|CARLOS ALBERTO FICTICIO|654321	~	{"role": "17"}	fact	~	~	~	~	receita@2041-01-01#1	Socios.csv:2	receita@2041-02-01#2	~
+legal_rep_of	person[receita|98990012|PATRICIA MENDES|678901]	person[receita|98990012|LUCAS HENRIQUE MENDES|567890]	receita|98990012|PATRICIA MENDES|678901	receita|98990012|LUCAS HENRIQUE MENDES|567890	{"role": "14"}	fact	~	~	~	~	receita@2041-01-01#1	Socios.csv:21	receita@2041-02-01#2	~
+partner_of	company:98990001	company:98990002	~	~	{"role": "22"}	fact	~	2011-01-01	~	~	receita@2041-01-01#1	Socios.csv:3	receita@2041-02-01#2	~
+partner_of	company:98990001	company:98990017	~	~	{"role": "22"}	fact	~	2017-07-07	~	~	receita@2041-01-01#1	Socios.csv:26	receita@2041-02-01#2	~
+partner_of	company:98990002	company:98990003	~	~	{"role": "22"}	fact	~	2013-05-10	~	~	receita@2041-01-01#1	Socios.csv:5	receita@2041-02-01#2	~
+partner_of	company:98999999	company:98990008	~	~	{"role": "22"}	fact	~	2019-02-02	~	~	receita@2041-01-01#1	Socios.csv:14	receita@2041-02-01#2	~
+partner_of	company:98AB0001	company:98990020	~	~	{"role": "22"}	fact	~	2026-09-01	~	~	receita@2041-01-01#1	Socios.csv:30	receita@2041-02-01#2	~
+partner_of	foreign:receita:98990001:NORTHWIND HOLDINGS LIMITED	company:98990001	~	~	{"role": "37"}	fact	~	2012-06-01	~	~	receita@2041-01-01#1	Socios.csv:2	receita@2041-02-01#2	~
+partner_of	foreign:receita:98990009:#37	company:98990009	~	~	{"role": "37"}	fact	~	2014-03-03	~	~	receita@2041-01-01#1	Socios.csv:16	receita@2041-02-01#2	~
+partner_of	foreign:receita:98990009:#38	company:98990009	~	~	{"role": "38"}	fact	~	2014-03-03	~	~	receita@2041-01-01#1	Socios.csv:17	receita@2041-02-01#2	~
+partner_of	person[receita|98990001|JOSE CONCEICAO BRANDAO|123456;receita|98990003|JOSE CONCEICAO BRANDAO|123456;receita|98990005|JOSE CONCEICAO BRANDAO|123456]	company:98990001	receita|98990001|JOSE CONCEICAO BRANDAO|123456	~	{"role": "05"}	fact	~	2010-03-15	~	~	receita@2041-02-01#2	Socios.csv:1	receita@2041-02-01#2	~
+partner_of	person[receita|98990001|JOSE CONCEICAO BRANDAO|123456;receita|98990003|JOSE CONCEICAO BRANDAO|123456;receita|98990005|JOSE CONCEICAO BRANDAO|123456]	company:98990001	receita|98990001|JOSE CONCEICAO BRANDAO|123456	~	{"role": "49"}	fact	~	2010-03-15	2041-01-01	2041-02-05	receita@2041-01-01#1	Socios.csv:1	receita@2041-01-01#1	receita@2041-02-01#2
+partner_of	person[receita|98990001|JOSE CONCEICAO BRANDAO|123456;receita|98990003|JOSE CONCEICAO BRANDAO|123456;receita|98990005|JOSE CONCEICAO BRANDAO|123456]	company:98990003	receita|98990003|JOSE CONCEICAO BRANDAO|123456	~	{"role": "22"}	fact	~	2013-05-10	~	~	receita@2041-01-01#1	Socios.csv:6	receita@2041-02-01#2	~
+partner_of	person[receita|98990001|JOSE CONCEICAO BRANDAO|123456;receita|98990003|JOSE CONCEICAO BRANDAO|123456;receita|98990005|JOSE CONCEICAO BRANDAO|123456]	company:98990005	receita|98990005|JOSE CONCEICAO BRANDAO|123456	~	{"role": "49"}	fact	~	2018-01-01	~	~	receita@2041-01-01#1	Socios.csv:8	receita@2041-02-01#2	~
+partner_of	person[receita|98990002|ANA LUCIA PEREIRA|234567]	company:98990002	receita|98990002|ANA LUCIA PEREIRA|234567	~	{"role": "05"}	fact	~	2011-01-01	~	~	receita@2041-01-01#1	Socios.csv:4	receita@2041-02-01#2	~
+partner_of	person[receita|98990004|ANTONIO MARCOS RIBEIRO|345678]	company:98990004	receita|98990004|ANTONIO MARCOS RIBEIRO|345678	~	{"role": "49"}	fact	~	2015-07-20	~	~	receita@2041-01-01#1	Socios.csv:7	receita@2041-02-01#2	~
+partner_of	person[receita|98990005|BEATRIZ GONCALVES|456789]	company:98990005	receita|98990005|BEATRIZ GONCALVES|456789	~	{"role": "22"}	fact	~	2018-01-01	~	~	receita@2041-01-01#1	Socios.csv:9	receita@2041-02-01#2	~
+partner_of	person[receita|98990006|FERNANDO DIAS LOPES|789012]	company:98990006	receita|98990006|FERNANDO DIAS LOPES|789012	~	{"role": "49"}	fact	~	2005-09-12	~	~	receita@2041-01-01#1	Socios.csv:11	receita@2041-02-01#2	~
+partner_of	person[receita|98990006||111222]	company:98990006	receita|98990006||111222	~	{"role": "16"}	fact	~	2005-09-12	~	~	receita@2041-01-01#1	Socios.csv:10	receita@2041-02-01#2	~
+partner_of	person[receita|98990007||111222]	company:98990007	receita|98990007||111222	~	{"role": "16"}	fact	~	2005-09-12	~	~	receita@2041-01-01#1	Socios.csv:12	receita@2041-02-01#2	~
+partner_of	person[receita|98990007||]	company:98990007	receita|98990007||	~	{"role": "16"}	fact	~	2005-09-12	~	~	receita@2041-01-01#1	Socios.csv:13	receita@2041-02-01#2	~
+partner_of	person[receita|98990008|GABRIELA MOURA|890123]	company:98990008	receita|98990008|GABRIELA MOURA|890123	~	{"role": "49"}	fact	~	2019-02-02	~	~	receita@2041-01-01#1	Socios.csv:15	receita@2041-02-01#2	~
+partner_of	person[receita|98990009|HELENA CASTRO|901234]	company:98990009	receita|98990009|HELENA CASTRO|901234	~	{"role": "05"}	fact	~	2014-03-03	~	~	receita@2041-01-01#1	Socios.csv:18	receita@2041-02-01#2	~
+partner_of	person[receita|98990011|JULIANA PRADO|135791]	company:98990011	receita|98990011|JULIANA PRADO|135791	~	{"role": "49"}	fact	~	2016-06-06	~	~	receita@2041-01-01#1	Socios.csv:20	receita@2041-02-01#2	~
+partner_of	person[receita|98990012|LUCAS HENRIQUE MENDES|567890]	company:98990012	receita|98990012|LUCAS HENRIQUE MENDES|567890	~	{"role": "30"}	fact	~	2020-01-01	~	~	receita@2041-01-01#1	Socios.csv:21	receita@2041-02-01#2	~
+partner_of	person[receita|98990012|PATRICIA MENDES|678901]	company:98990012	receita|98990012|PATRICIA MENDES|678901	~	{"role": "49"}	fact	~	2020-01-01	~	~	receita@2041-01-01#1	Socios.csv:22	receita@2041-02-01#2	~
+partner_of	person[receita|98990013|KLEBER ANDRADE|246802]	company:98990013	receita|98990013|KLEBER ANDRADE|246802	~	{"role": "49"}	fact	~	~	~	~	receita@2041-01-01#1	Socios.csv:23	receita@2041-02-01#2	~
+partner_of	person[receita|98990014|SIMONE TAVARES|112233]	company:98990014	receita|98990014|SIMONE TAVARES|112233	~	{"role": "49"}	fact	~	~	~	~	receita@2041-01-01#1	Socios.csv:24	receita@2041-02-01#2	~
+partner_of	person[receita|98990016|OSVALDO QUEIROZ|223344]	company:98990016	receita|98990016|OSVALDO QUEIROZ|223344	~	{"role": "16"}	fact	~	2009-09-09	~	~	receita@2041-01-01#1	Socios.csv:25	receita@2041-02-01#2	~
+partner_of	person[receita|98990017|RENATA VIEIRA|334455]	company:98990017	receita|98990017|RENATA VIEIRA|334455	~	{"role": "10"}	fact	~	2017-07-07	~	~	receita@2041-01-01#1	Socios.csv:27	receita@2041-02-01#2	~
+partner_of	person[receita|98990018|CARLA REPETIDA FICTICIA|700001]	company:98990018	receita|98990018|CARLA REPETIDA FICTICIA|700001	~	{"role": "49"}	fact	~	2020-03-03	~	~	receita@2041-01-01#1	Socios.csv:44	receita@2041-02-01#2	~
+partner_of	person[receita|98990018|SERGIO UCHOA|445566]	company:98990018	receita|98990018|SERGIO UCHOA|445566	~	{"role": "49"}	fact	~	2012-02-02	~	~	receita@2041-01-01#1	Socios.csv:28	receita@2041-02-01#2	~
+partner_of	person[receita|98990018|TANIA XAVIER|556677]	company:98990018	receita|98990018|TANIA XAVIER|556677	~	{"role": "22"}	fact	~	2012-02-02	~	~	receita@2041-01-01#1	Socios.csv:29	receita@2041-02-01#2	~
+partner_of	person[receita|98990020|VALERIA ZANETTI|667788]	company:98990020	receita|98990020|VALERIA ZANETTI|667788	~	{"role": "49"}	fact	~	2021-01-01	~	~	receita@2041-01-01#1	Socios.csv:31	receita@2041-02-01#2	~
+partner_of	person[receita|98990021|CARLA REPETIDA FICTICIA|700001]	company:98990021	receita|98990021|CARLA REPETIDA FICTICIA|700001	~	{"role": "22"}	fact	~	2020-03-03	~	~	receita@2041-01-01#1	Socios.csv:45	receita@2041-02-01#2	~
+partner_of	person[receita|98990021|WAGNER BARROS|778899]	company:98990021	receita|98990021|WAGNER BARROS|778899	~	{"role": "49"}	fact	~	2008-08-08	~	~	receita@2041-01-01#1	Socios.csv:32	receita@2041-02-01#2	~
+partner_of	person[receita|98990023|CARLA REPETIDA FICTICIA|700002]	company:98990023	receita|98990023|CARLA REPETIDA FICTICIA|700002	~	{"role": "49"}	fact	~	2020-03-03	~	~	receita@2041-01-01#1	Socios.csv:46	receita@2041-02-01#2	~
+partner_of	person[receita|98990023|YARA CORDEIRO|889900]	company:98990023	receita|98990023|YARA CORDEIRO|889900	~	{"role": "49"}	fact	~	2011-11-11	~	~	receita@2041-01-01#1	Socios.csv:33	receita@2041-02-01#2	~
+partner_of	person[receita|98990024|ALVARO ESTEVES|101112]	company:98990024	receita|98990024|ALVARO ESTEVES|101112	~	{"role": "22"}	fact	~	2013-03-03	~	~	receita@2041-01-01#1	Socios.csv:35	receita@2041-02-01#2	~
+partner_of	person[receita|98990024|CARLA REPETIDA FICTICIA|700002]	company:98990024	receita|98990024|CARLA REPETIDA FICTICIA|700002	~	{"role": "22"}	fact	~	2020-03-03	~	~	receita@2041-01-01#1	Socios.csv:47	receita@2041-02-01#2	~
+partner_of	person[receita|98990024|ZELIA DUARTE|990011]	company:98990024	receita|98990024|ZELIA DUARTE|990011	~	{"role": "49"}	fact	~	2013-03-03	~	~	receita@2041-01-01#1	Socios.csv:34	receita@2041-02-01#2	~
+partner_of	person[receita|98990025|BRUNO FARIAS|121314]	company:98990025	receita|98990025|BRUNO FARIAS|121314	~	{"role": "49"}	fact	~	2022-02-02	~	~	receita@2041-01-01#1	Socios.csv:36	receita@2041-02-01#2	~
+partner_of	person[receita|98990025|CARLA REPETIDA FICTICIA|700003]	company:98990025	receita|98990025|CARLA REPETIDA FICTICIA|700003	~	{"role": "49"}	fact	~	2020-03-03	~	~	receita@2041-01-01#1	Socios.csv:48	receita@2041-02-01#2	~
+partner_of	person[receita|98990025|OTAVIO RECENTE FICTICIO|710002]	company:98990025	receita|98990025|OTAVIO RECENTE FICTICIO|710002	~	{"role": "22"}	fact	~	2030-12-15	~	~	receita@2041-02-01#2	Socios.csv:49	receita@2041-02-01#2	~
+partner_of	person[receita|98990026|LUCIA DOADORA EXEMPLO|888999]	company:98990026	receita|98990026|LUCIA DOADORA EXEMPLO|888999	~	{"role": "22"}	fact	~	2018-05-05	~	~	receita@2041-01-01#1	Socios.csv:43	receita@2041-02-01#2	~
+partner_of	person[receita|98990026|ROBERTO DOADOR FICTICIO|555666]	company:98990026	receita|98990026|ROBERTO DOADOR FICTICIO|555666	~	{"role": "49"}	fact	~	2018-05-05	~	~	receita@2041-01-01#1	Socios.csv:42	receita@2041-02-01#2	~
+partner_of	person[receita|98990027|CINTIA GUEDES|141516]	company:98990027	receita|98990027|CINTIA GUEDES|141516	~	{"role": "49"}	fact	~	2010-01-10	2041-01-01	2041-02-05	receita@2041-01-01#1	Socios.csv:37	receita@2041-01-01#1	receita@2041-02-01#2
+partner_of	person[receita|98990027|DEBORA HOLANDA|]	company:98990027	receita|98990027|DEBORA HOLANDA|	~	{"role": "22"}	fact	~	2019-09-19	~	~	receita@2041-01-01#1	Socios.csv:49	receita@2041-02-01#2	~
+partner_of	person[receita|98990028|DEBORA HOLANDA|161718]	company:98990028	receita|98990028|DEBORA HOLANDA|161718	~	{"role": "49"}	fact	~	2019-09-19	2041-01-01	2041-02-05	receita@2041-01-01#1	Socios.csv:38	receita@2041-01-01#1	receita@2041-02-01#2
+partner_of	person[receita|98990030|MARCIA NOVATA FICTICIA|710001]	company:98990030	receita|98990030|MARCIA NOVATA FICTICIA|710001	~	{"role": "49"}	fact	~	2030-12-15	~	~	receita@2041-02-01#2	Socios.csv:48	receita@2041-02-01#2	~
+partner_of	person[receita|98AB0001|IGOR NASCIMENTO|012345]	company:98AB0001	receita|98AB0001|IGOR NASCIMENTO|012345	~	{"role": "49"}	fact	~	2026-08-01	~	~	receita@2041-01-01#1	Socios.csv:19	receita@2041-02-01#2	~
