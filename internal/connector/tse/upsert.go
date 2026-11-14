@@ -15,7 +15,7 @@ import (
 
 // relBuckets is the number of relationship chunks; a municipal year (about
 // 550 k candidacies and a few million receipts) gives a few thousand claims
-// per chunk. Must be a power of two.
+// per chunk.
 const relBuckets = 256
 
 // workMem is set for the set-based transactions.
@@ -119,18 +119,25 @@ const (
 			WHERE d.donor_kind = 'person'
 		) p
 		ORDER BY p.context_key, p.name_norm, p.cpf_fragment, p.file_no, p.line`
-	// New keys get an entity id from the entity sequence ($2 is its oid).
+	// New keys get an entity id from the entity sequence ($2 is its oid),
+	// handed out in key order (PostgreSQL evaluates a volatile function of
+	// the select list after the ORDER BY), and records are inserted in that
+	// order: candidacy records ('cand:<year>:<SQ>') and donor records
+	// ('donor:<year>:<SQ>') get ids in the order of the candidacies, the
+	// order of the relationship chunks (claimBuckets).
 	sqlPersonNew = `INSERT INTO tse_stg_person_new (entity_id, context_key, name, name_norm, cpf_fragment, file_no, line)
 		SELECT nextval($2::oid::regclass), p.context_key, p.name, p.name_norm, p.cpf_fragment, p.file_no, p.line
 		FROM tse_stg_person p
 		WHERE NOT EXISTS (SELECT 1 FROM person_record r WHERE r.source_id = $1 AND r.context_key = p.context_key
-			AND r.name_norm = p.name_norm AND r.cpf_fragment = p.cpf_fragment)`
+			AND r.name_norm = p.name_norm AND r.cpf_fragment = p.cpf_fragment)
+		ORDER BY p.context_key, p.name_norm, p.cpf_fragment`
 	sqlPersonEntities = `INSERT INTO entity (id, kind, name, name_norm)
-		SELECT entity_id, 'person', name, name_norm FROM tse_stg_person_new`
+		SELECT entity_id, 'person', name, name_norm FROM tse_stg_person_new ORDER BY entity_id`
 	sqlPersonRecords = `INSERT INTO person_record (source_id, context_key, name, name_norm, cpf_fragment, entity_id,
 			identity_confidence, first_collection_id, record_ref)
 		SELECT $1, n.context_key, n.name, n.name_norm, n.cpf_fragment, n.entity_id, 1, $2, f.name || ':' || n.line
-		FROM tse_stg_person_new n JOIN tse_stg_file f ON f.file_no = n.file_no`
+		FROM tse_stg_person_new n JOIN tse_stg_file f ON f.file_no = n.file_no
+		ORDER BY n.entity_id`
 	sqlPersonClear = `TRUNCATE tse_stg_person, tse_stg_person_new`
 )
 
@@ -187,35 +194,41 @@ const (
 		AND NOT EXISTS (SELECT 1 FROM tse_stg_candidate c WHERE c.year = d.year AND c.sq = d.donor_sq)`
 )
 
-// Claims. Each insert is sorted by bucket so the BRIN index on
-// tse_stg_claim.bucket makes each bucket's read a short range scan (in the
-// 2024 trial, unsorted claims cost a full scan of 2 M rows per bucket).
-const (
-	// companies of the donors (first line's name; Receita's name wins when
-	// the company is already known).
-	sqlCompanies = `INSERT INTO entity (kind, natural_key, name, name_norm)
-		SELECT DISTINCT ON (d.donor_base) 'company', d.donor_base, r.donor_name, r.donor_name_norm
-		FROM tse_stg_donation d ` + firstLine + `
-		WHERE d.donor_kind = 'company'
-		  AND NOT EXISTS (SELECT 1 FROM entity e WHERE e.kind = 'company' AND e.natural_key = d.donor_base)
-		ORDER BY d.donor_base, d.file_no, d.line`
+// Claims. A claim's bucket is the one of its candidacy: a range of
+// candidacy context keys (connector.RangeChunks, weighted by the candidacy's
+// claims: its candidate_for and its donations), so all claims of a
+// candidacy share a bucket, buckets hold about equal numbers of claims, and a
+// bucket reads and writes short ranges of the candidacy and donor records
+// (their ids follow the same order, see sqlPersonNew) and of relationship's
+// indexes. Both inserts compute the same buckets: they run in one
+// transaction over the same staging. The ranges are recomputed from staging
+// at every load; nothing depends on them across loads.
+//
+// Each insert is sorted by bucket so the BRIN index on tse_stg_claim.bucket
+// makes each bucket's read a short range scan (in the 2024 trial, unsorted
+// claims cost a full scan of 2 M rows per bucket).
+var (
+	claimBuckets = connector.RangeChunks(`SELECT context_key FROM tse_stg_candidate
+		UNION ALL
+		SELECT c.context_key FROM tse_stg_donation d JOIN tse_stg_candidate c ON c.year = d.year AND c.sq = d.sq`, relBuckets)
 	// candidate_for: candidacy record -> party entity.
 	sqlClaimsCandidate = `INSERT INTO tse_stg_claim (bucket, rel_type, src_entity_id, src_record_id, dst_entity_id, dst_record_id,
 			role, valid_from, attrs, file_no, line)
-		SELECT hashtext(c.context_key) & $2, 'candidate_for', NULL, cr.id, p.id, NULL,
+		SELECT b.bucket, 'candidate_for', NULL, cr.id, p.id, NULL,
 			c.year || ':' || c.office_code || ':' || c.uf || ':' || c.city, c.valid_from,
 			jsonb_build_object('year', c.year, 'office', c.office, 'office_code', c.office_code, 'uf', c.uf,
 				'city', c.city, 'city_name', c.city_name, 'result', c.result, 'ballot_name', c.ballot_name),
 			c.file_no, c.line
 		FROM tse_stg_candidate c
+		JOIN (` + claimBuckets + `) b ON b.key = c.context_key
 		JOIN LATERAL (` + candRecordContext + `) cr ON true
 		JOIN entity p ON p.kind = 'party' AND p.natural_key = c.party
-		ORDER BY 1`
+		ORDER BY b.bucket`
 	// donated_to: donor (person record, company or party entity, or the
 	// record of the donor candidacy) -> candidacy record.
 	sqlClaimsDonation = `INSERT INTO tse_stg_claim (bucket, rel_type, src_entity_id, src_record_id, dst_entity_id, dst_record_id,
 			role, valid_from, attrs, file_no, line)
-		SELECT hashtext(c.context_key) & $2, 'donated_to',
+		SELECT b.bucket, 'donated_to',
 			CASE d.donor_kind WHEN 'company' THEN co.id WHEN 'party' THEN pa.id END,
 			CASE d.donor_kind WHEN 'person' THEN pr.id WHEN 'candidate' THEN dr.id END,
 			NULL, cr.id, d.receipt_id, d.receipt_date,
@@ -224,6 +237,7 @@ const (
 			d.file_no, d.line
 		FROM tse_stg_donation d
 		JOIN tse_stg_candidate c ON c.year = d.year AND c.sq = d.sq
+		JOIN (` + claimBuckets + `) b ON b.key = c.context_key
 		JOIN LATERAL (` + candRecordContext + `) cr ON true
 		LEFT JOIN person_record pr ON d.donor_kind = 'person' AND pr.source_id = $1
 			AND pr.context_key = 'donor:' || d.year || ':' || d.sq
@@ -234,7 +248,18 @@ const (
 		LEFT JOIN LATERAL (SELECT r.id FROM person_record r WHERE r.source_id = $1 AND r.context_key = dc.context_key
 			ORDER BY r.id LIMIT 1) dr ON true
 		WHERE coalesce(pr.id, co.id, pa.id, dr.id) IS NOT NULL
-		ORDER BY 1`
+		ORDER BY b.bucket`
+)
+
+const (
+	// companies of the donors (first line's name; Receita's name wins when
+	// the company is already known).
+	sqlCompanies = `INSERT INTO entity (kind, natural_key, name, name_norm)
+		SELECT DISTINCT ON (d.donor_base) 'company', d.donor_base, r.donor_name, r.donor_name_norm
+		FROM tse_stg_donation d ` + firstLine + `
+		WHERE d.donor_kind = 'company'
+		  AND NOT EXISTS (SELECT 1 FROM entity e WHERE e.kind = 'company' AND e.natural_key = d.donor_base)
+		ORDER BY d.donor_base, d.file_no, d.line`
 	// The record of a candidacy: the first one of its context (there is one
 	// per context, since the first publication wins).
 	candRecordContext = `SELECT r.id FROM person_record r WHERE r.source_id = $1 AND r.context_key = c.context_key ORDER BY r.id LIMIT 1`
@@ -361,8 +386,8 @@ func upsert(ctx context.Context, pool *pgxpool.Pool, colID int64, stats connecto
 		return err
 	}
 	if err := run(ctx, pool, "claims", stats, []step{
-		{name: "claims candidate_for", sql: sqlClaimsCandidate, args: []any{sourceID, relBuckets - 1}},
-		{name: "claims donated_to", sql: sqlClaimsDonation, args: []any{sourceID, relBuckets - 1}},
+		{name: "claims candidate_for", sql: sqlClaimsCandidate, args: []any{sourceID}},
+		{name: "claims donated_to", sql: sqlClaimsDonation, args: []any{sourceID}},
 		{name: "analyze claim", sql: `ANALYZE tse_stg_claim`},
 	}); err != nil {
 		return err

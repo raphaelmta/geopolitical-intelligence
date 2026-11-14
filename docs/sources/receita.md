@@ -376,9 +376,13 @@ Observações sobre a tabela `Naturezas`: não vem ordenada; há dois códigos d
   se fundam em silêncio; com o mesmo código, viram uma só entidade.
 - **Sócio PJ órfão** (ou empresa que só aparece em Sócios): cria a entidade
   `company` com o nome da linha de sócio, sem `company_version`.
-- **Vínculos em lotes**: os vínculos são gravados por balde
-  (`hashtext(cnpj_basico) & 1023`, 1.024 baldes; todos os vínculos de uma
-  empresa caem no mesmo balde), cada balde numa transação curta que começa
+- **Vínculos em lotes**: os vínculos são gravados por balde — até 1.024
+  faixas consecutivas de `cnpj_basico` com quantidades parecidas de linhas de
+  Sócios, recalculadas a cada carga a partir do staging
+  (`connector.RangeChunks`); todos os vínculos de uma empresa caem no mesmo
+  balde, e os ids de empresas, pessoas e fichas são distribuídos nessa mesma
+  ordem, de modo que cada balde lê e escreve trechos curtos das tabelas e
+  índices —, cada balde numa transação curta que começa
   pela trava de identidade (`identity.LockTx`) e lê nela a entidade atual de
   cada ficha. Uma carga que falha no meio é reparada pela coleta seguinte (as
   inserções são idempotentes).

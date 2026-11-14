@@ -128,8 +128,9 @@ CREATE UNLOGGED TABLE tse_stg_donation (
 
 -- Every claim of the Load with the ids identity resolution never moves
 -- (person record ids, party and company entities), sorted by bucket
--- (hashtext of the candidate's context_key, so all claims of a candidacy
--- share a bucket). Each bucket is written in its own short transaction
+-- (originally hashtext of the candidate's context_key; since the load
+-- optimisation, task 2, a range of context keys: see connector.RangeChunks;
+-- either way all claims of a candidacy share a bucket). Each bucket is written in its own short transaction
 -- under the identity lock.
 CREATE UNLOGGED TABLE tse_stg_claim (
     bucket        int      NOT NULL,

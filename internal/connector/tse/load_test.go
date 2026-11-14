@@ -749,3 +749,62 @@ func TestConflictingReceiptIsNotDuplicated(t *testing.T) {
 		t.Errorf("second load stats: %v", stats)
 	}
 }
+
+// The relationship chunks are ranges of candidacy context keys, and the
+// candidacy and donor records get their ids in that order, so a chunk
+// touches short ranges of person_record. Two loads of the same staging cut
+// the same chunks.
+func TestRelationshipChunksAreCandidacyRanges(t *testing.T) {
+	e := newEnv(t)
+	const claims = `WITH k AS (
+			SELECT DISTINCT c.bucket, r.id AS rec, r.context_key
+			FROM tse_stg_claim c
+			JOIN person_record r ON r.id = CASE c.rel_type WHEN 'candidate_for' THEN c.src_record_id ELSE c.dst_record_id END)`
+	var buckets []string
+	first := true
+	stagingHook = func(ctx context.Context, tx pgx.Tx, point string) {
+		if point != "relationship staging" || !first {
+			return
+		}
+		first = false
+		var split, disorder, n int
+		if err := tx.QueryRow(ctx, claims+`
+			SELECT (SELECT count(*) FROM (SELECT rec FROM k GROUP BY rec HAVING count(DISTINCT bucket) > 1) x),
+				(SELECT count(*) FROM (SELECT bucket, rec, lag(bucket) OVER w AS prev_bucket, lag(rec) OVER w AS prev_rec
+					FROM k WINDOW w AS (ORDER BY context_key)) x WHERE bucket < prev_bucket OR rec < prev_rec),
+				(SELECT count(DISTINCT bucket) FROM k)`).Scan(&split, &disorder, &n); err != nil {
+			t.Fatal(err)
+		}
+		if split != 0 {
+			t.Errorf("%d candidacies split over several buckets", split)
+		}
+		if disorder != 0 {
+			t.Errorf("%d candidacies out of context order (bucket or record id)", disorder)
+		}
+		if n < 2 {
+			t.Errorf("%d buckets, want the fixture spread over several", n)
+		}
+		rows, err := tx.Query(ctx, claims+` SELECT context_key || ':' || bucket FROM k ORDER BY 1`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			t.Fatal(err)
+		}
+		buckets = append(buckets, strings.Join(got, ","))
+	}
+	t.Cleanup(func() { stagingHook = nil })
+	e.loadFixture(t)
+	if n := e.count(t, `SELECT count(*) FROM (
+			SELECT id, lag(id) OVER (ORDER BY context_key, name_norm, cpf_fragment) AS prev
+			FROM person_record WHERE context_key LIKE 'donor:%') x
+		WHERE id < prev`); n != 0 {
+		t.Errorf("%d donor records out of key order", n)
+	}
+	first = true
+	e.loadFixture(t)
+	if len(buckets) != 2 || buckets[0] != buckets[1] {
+		t.Errorf("buckets of two loads of the same staging differ (%d loads seen)", len(buckets))
+	}
+}

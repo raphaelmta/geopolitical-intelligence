@@ -281,6 +281,29 @@ section 7.
   probes gain less until the table is rewritten (section 8).
 - **Gain.** Relationship phase × 1.63 under pressure (469 → 287 s) and flat;
   re-load's relationship phase × 1.9 (379 → 202 s).
+- **Implemented** (`connector.RangeChunks` in `internal/connector/chunks.go`,
+  used by `receita/upsert.go` and `tse/upsert.go`). One difference from the
+  prototype's expression: chunks hold equal numbers of **staged rows**, not of
+  companies. A key's bucket is `(rows of the keys before it) × chunks / all
+  rows`, so a bucket holds at most `ceil(rows / chunks) + (rows of its last
+  key) − 1` rows: a company with very many partners fills its bucket alone
+  (the buckets it spans stay empty) instead of making one chunk many times the
+  average, and companies without Socios rows are not keys at all. Buckets are
+  a function of the staged multiset of keys only. Receita: keys are
+  `cnpj_basico` of the Socios rows. TSE: keys are the candidacy
+  `context_key`, weighted by its claims (its `candidate_for` and its
+  donations); both claim inserts join the same computation in one transaction.
+  Ids are handed out in the chunks' order: `ORDER BY` in `sqlPersonNew`
+  (PostgreSQL evaluates `nextval` of the select list after the sort), person
+  entities and records inserted in entity-id order; TSE candidacy records
+  (`cand:<year>:<SQ>`) and donor records (`donor:<year>:<SQ>`) both follow
+  the candidacies' text order. `relBuckets` need no longer be a power of two.
+  Tests: `TestRangeChunks` (skewed and uneven weights, fewer keys than chunks,
+  empty staging: every key in one bucket, buckets never decrease along the
+  key order, the size bound, the same chunks from the rows in another order),
+  `TestRelationshipChunksAreCompanyRanges` (Receita) and
+  `TestRelationshipChunksAreCandidacyRanges` (TSE) on the fixtures; task 1's
+  goldens pass unchanged.
 
 ### Task 3 — Resolve the new records before writing the relationships
 

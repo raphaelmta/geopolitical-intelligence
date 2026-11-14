@@ -26,7 +26,7 @@ func checkpoint(point string) error {
 }
 
 // relBuckets is the number of relationship chunks: about 27 k Socios rows
-// (seconds of work) per chunk at national scale. Must be a power of two.
+// (seconds of work) per chunk at national scale.
 const relBuckets = 1024
 
 // workMem is set for the set-based transactions (sorts and hashes over tens
@@ -145,19 +145,26 @@ const (
 			FROM receita_stg_socio WHERE has_rep
 		) p
 		ORDER BY p.context_key, p.name_norm, p.cpf_fragment, p.prio, p.file_no, p.line`
-	// New keys get an entity id from the entity sequence ($2 is its oid).
+	// New keys get an entity id from the entity sequence ($2 is its oid),
+	// handed out in key order (context_key = cnpj_basico first): PostgreSQL
+	// evaluates a volatile function of the select list after the ORDER BY, so
+	// ids follow the companies' order and a relationship chunk (a range of
+	// cnpj_basico) reads and points at a short range of ids.
 	sqlPersonNew = `INSERT INTO receita_stg_person_new (entity_id, context_key, name, name_norm, cpf_fragment, file_no, line)
 		SELECT nextval($2::oid::regclass), p.context_key, p.name, p.name_norm, p.cpf_fragment, p.file_no, p.line
 		FROM receita_stg_person p
 		WHERE NOT EXISTS (SELECT 1 FROM person_record r WHERE r.source_id = $1 AND r.context_key = p.context_key
-			AND r.name_norm = p.name_norm AND r.cpf_fragment = p.cpf_fragment)`
+			AND r.name_norm = p.name_norm AND r.cpf_fragment = p.cpf_fragment)
+		ORDER BY p.context_key, p.name_norm, p.cpf_fragment`
 	sqlPersonEntities = `INSERT INTO entity (id, kind, name, name_norm)
-		SELECT entity_id, 'person', name, name_norm FROM receita_stg_person_new`
-	// Inserted already linked: no follow-up UPDATE (and its trigger) per record.
+		SELECT entity_id, 'person', name, name_norm FROM receita_stg_person_new ORDER BY entity_id`
+	// Inserted already linked: no follow-up UPDATE (and its trigger) per
+	// record. In entity id order, so record ids follow the same key order.
 	sqlPersonRecords = `INSERT INTO person_record (source_id, context_key, name, name_norm, cpf_fragment, entity_id,
 			identity_confidence, first_collection_id, record_ref)
 		SELECT $1, n.context_key, n.name, n.name_norm, n.cpf_fragment, n.entity_id, 1, $2, f.name || ':' || n.line
-		FROM receita_stg_person_new n JOIN receita_stg_file f ON f.file_no = n.file_no`
+		FROM receita_stg_person_new n JOIN receita_stg_file f ON f.file_no = n.file_no
+		ORDER BY n.entity_id`
 	sqlForeignEntities = `INSERT INTO entity (kind, natural_key, name, name_norm)
 		SELECT DISTINCT ON (s.foreign_key) 'foreign', s.foreign_key, s.name, s.name_norm
 		FROM receita_stg_socio s
@@ -171,20 +178,31 @@ const (
 //   - sqlPartners (one transaction, no identity lock) resolves, for every
 //     Socios row, the ids identity resolution never moves: the company, the
 //     company or foreign partner entity, and the person record ids of the
-//     partner and of the representative. Rows are stored sorted by bucket
-//     (a hash of cnpj_basico, so all claims of one company share a bucket).
-//   - per bucket (relChunk): take the identity lock, read the records'
+//     partner and of the representative. Rows are stored sorted by bucket:
+//     a range of cnpj_basico (connector.RangeChunks over the Socios rows),
+//     so all claims of one company share a bucket and a bucket holds about
+//     1/relBuckets of the rows. Company entities, person entities and
+//     person records get their ids in cnpj_basico order (sqlCompanyEntities,
+//     sqlPersonNew, sqlPersonRecords), so a bucket reads and writes short
+//     ranges of entity, person_record and of relationship's indexes instead
+//     of pages all over them. The ranges are recomputed from staging at
+//     every load; nothing depends on them across loads.
+//   - per bucket (relationships): take the identity lock, read the records'
 //     current entities, stage one row per natural key and write them.
 //
 // Every chunk is idempotent (anti-joins on the natural key), so a load that
 // fails between chunks is repaired by the next collection.
-const (
-	sqlPartners = `INSERT INTO receita_stg_partner (bucket, company_id, partner_entity_id, partner_record_id, rep_record_id,
+var (
+	// partnerBuckets is the bucket of each company with Socios rows, weighted
+	// by its rows (a company with many partners counts for many).
+	partnerBuckets = connector.RangeChunks(`SELECT cnpj_basico FROM receita_stg_socio`, relBuckets)
+	sqlPartners    = `INSERT INTO receita_stg_partner (bucket, company_id, partner_entity_id, partner_record_id, rep_record_id,
 			qual, rep_qual, valid_from, file_no, line)
-		SELECT hashtext(s.cnpj_basico) & $2, c.entity_id,
+		SELECT b.bucket, c.entity_id,
 			CASE s.partner_type WHEN '1' THEN pc.entity_id WHEN '3' THEN fe.id END,
 			pr.id, rr.id, s.qual, s.rep_qual, s.valid_from, s.file_no, s.line
 		FROM receita_stg_socio s
+		JOIN (` + partnerBuckets + `) b ON b.key = s.cnpj_basico
 		JOIN receita_stg_company c ON c.cnpj_basico = s.cnpj_basico
 		LEFT JOIN receita_stg_company pc ON s.partner_type = '1' AND pc.cnpj_basico = s.partner_base
 		LEFT JOIN entity fe ON s.partner_type = '3' AND fe.kind = 'foreign' AND fe.natural_key = s.foreign_key
@@ -192,7 +210,10 @@ const (
 			AND pr.name_norm = s.name_norm AND pr.cpf_fragment = s.cpf_fragment
 		LEFT JOIN person_record rr ON s.has_rep AND rr.source_id = $1 AND rr.context_key = s.cnpj_basico
 			AND rr.name_norm = s.rep_name_norm AND rr.cpf_fragment = s.rep_fragment
-		ORDER BY 1`
+		ORDER BY b.bucket`
+)
+
+const (
 	sqlBuckets = `SELECT DISTINCT bucket FROM receita_stg_partner ORDER BY 1`
 	// Up to three claims per Socios row of bucket $2, one row per natural key
 	// (first row wins): partner_of (partner -> company, role = qualification,
@@ -314,7 +335,7 @@ func upsert(ctx context.Context, pool *pgxpool.Pool, colID int64, scope []string
 		return err
 	}
 	if err := run(ctx, pool, "partners", nil, []step{
-		{name: "partners", sql: sqlPartners, args: []any{sourceID, relBuckets - 1}},
+		{name: "partners", sql: sqlPartners, args: []any{sourceID}},
 		{name: "analyze partner", sql: `ANALYZE receita_stg_partner`},
 	}); err != nil {
 		return err

@@ -6,9 +6,12 @@
 -- with all ids that identity resolution never moves (companies, foreign
 -- entities, person record ids) resolved once, outside the lock, sorted by
 -- bucket; BRIN on that order makes each bucket a short range scan.
--- bucket = hashtext(cnpj_basico) & 1023: every claim of one company falls in
--- the bucket of that company, so deduplicating per bucket equals
--- deduplicating over the whole load.
+-- bucket is a range of cnpj_basico (originally hashtext(cnpj_basico) & 1023;
+-- since the load optimisation, task 2, one of 1,024 ranges of about equal
+-- numbers of Socios rows, recomputed from staging at every load: see
+-- connector.RangeChunks). Either way every claim of one company falls in the
+-- bucket of that company, so deduplicating per bucket equals deduplicating
+-- over the whole load.
 CREATE UNLOGGED TABLE receita_stg_partner (
     bucket            int      NOT NULL,
     company_id        bigint   NOT NULL,

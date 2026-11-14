@@ -128,6 +128,55 @@ func TestRelationshipsAreWrittenInSeveralChunks(t *testing.T) {
 	}
 }
 
+// The relationship chunks are ranges of cnpj_basico, and the ids the earlier
+// phases hand out follow that order, so a chunk touches short ranges of
+// entity and person_record. The buckets are the same when the same staging is
+// loaded again.
+func TestRelationshipChunksAreCompanyRanges(t *testing.T) {
+	e := newEnv(t)
+	var buckets []string
+	checkpointHook = func(p string) error {
+		switch p {
+		case "persons":
+			// Before Resolve moves any: person records and their own
+			// entities have ids in (context_key, name_norm, cpf_fragment)
+			// order.
+			if n := e.count(t, `SELECT count(*) FROM (
+					SELECT id, entity_id, lag(id) OVER w AS prev_id, lag(entity_id) OVER w AS prev_entity
+					FROM person_record WHERE first_collection_id = (SELECT max(id) FROM collection)
+					WINDOW w AS (ORDER BY context_key, name_norm, cpf_fragment)) x
+				WHERE x.id < x.prev_id OR x.entity_id < x.prev_entity`); n != 0 {
+				t.Errorf("%d person records out of key order (record or entity id)", n)
+			}
+		case "relationship chunk 1":
+			// Every company in one bucket.
+			if n := e.count(t, `SELECT count(*) FROM (SELECT company_id FROM receita_stg_partner
+				GROUP BY company_id HAVING count(DISTINCT bucket) > 1) x`); n != 0 {
+				t.Errorf("%d companies split over several buckets", n)
+			}
+			// Buckets never decrease along cnpj_basico, and on a first load
+			// the company entity ids do not either.
+			if n := e.count(t, `SELECT count(*) FROM (
+					SELECT p.bucket, p.company_id, lag(p.bucket) OVER w AS prev_bucket, lag(p.company_id) OVER w AS prev_id
+					FROM (SELECT DISTINCT company_id, bucket FROM receita_stg_partner) p
+					JOIN entity c ON c.id = p.company_id
+					WINDOW w AS (ORDER BY c.natural_key)) x
+				WHERE x.bucket < x.prev_bucket OR x.company_id < x.prev_id`); n != 0 {
+				t.Errorf("%d companies out of cnpj_basico order (bucket or entity id)", n)
+			}
+			buckets = append(buckets, strings.Join(e.strings(t, `SELECT DISTINCT c.natural_key || ':' || p.bucket
+				FROM receita_stg_partner p JOIN entity c ON c.id = p.company_id ORDER BY 1`), ","))
+		}
+		return nil
+	}
+	t.Cleanup(func() { checkpointHook = nil })
+	e.loadFixture(t)
+	e.loadFixture(t)
+	if len(buckets) != 2 || buckets[0] != buckets[1] {
+		t.Errorf("buckets of two loads of the same staging differ (%d loads seen)", len(buckets))
+	}
+}
+
 func rawZip(t *testing.T, entries ...string) []byte {
 	t.Helper()
 	var buf bytes.Buffer
