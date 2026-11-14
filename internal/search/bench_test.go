@@ -166,3 +166,63 @@ func generate(f *fx, n int) {
 		}
 	}
 }
+
+// TestSearchRebuildTimings measures the rebuild paths of task 5 of
+// docs/performance/2026-load-optimization-design.md on SEARCH_BENCH_N
+// (default 1,000,000) synthetic entities: the first build, a refresh after
+// which nothing changed (skipped), a rebuild after 1 % new entities and
+// relationships reusing the live tables, and the same data rebuilt without
+// reuse (what every refresh cost before). It only runs with SEARCH_BENCH=1
+// (see TestSearchPerformanceSanity for the command line).
+func TestSearchRebuildTimings(t *testing.T) {
+	if os.Getenv("SEARCH_BENCH") != "1" {
+		t.Skip("set SEARCH_BENCH=1 to run")
+	}
+	n := 1_000_000
+	if v := os.Getenv("SEARCH_BENCH_N"); v != "" {
+		var err error
+		if n, err = strconv.Atoi(v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f := setup(t)
+	generate(f, n)
+	s := search.NewForTest(f.pool, max(int64(n)*100000/88_800_000, 10), 30*time.Second)
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := f.pool.Exec(ctx, sql, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	step := func(name string, wantRebuilt bool) {
+		t.Helper()
+		st, rebuilt, err := s.Refresh(ctx)
+		if err != nil || rebuilt != wantRebuilt {
+			t.Fatalf("%s: rebuilt=%v err=%v", name, rebuilt, err)
+		}
+		t.Logf("%-40s %8v rebuilt=%v unchanged=%v reused=%v", name, st.Duration.Round(time.Millisecond),
+			rebuilt, st.Unchanged, st.Reused)
+	}
+	for round := range 2 {
+		t.Logf("round %d", round+1)
+		if round == 0 {
+			step("first build (nothing to reuse)", true)
+		}
+		step("refresh, nothing changed", false)
+		// A small collection: 1 % new entities (persons get a record) and
+		// as many new relationships, some to existing entities.
+		exec(`INSERT INTO entity (kind, natural_key, name)
+			SELECT 'company', 'N' || $2::int || '-' || g, 'NOVA EMPRESA ' || g || ' COMERCIO'
+			FROM generate_series(1, $1::int) g`, n/100, round)
+		exec(`INSERT INTO relationship (rel_type, src_entity_id, dst_entity_id, attrs, kind, first_collection_id, record_ref)
+			SELECT 'partner_of', e.id, (SELECT min(id) FROM entity) + (e.id % 1000), jsonb_build_object('role', 'n'), 'fact', $1,
+				'bench:new:' || e.id
+			FROM entity e WHERE e.natural_key LIKE 'N' || $2::int || '-%'`, f.col, round)
+		exec(`ANALYZE entity`)
+		exec(`ANALYZE relationship`)
+		step("refresh after 1 % new, reusing", true)
+		exec(`UPDATE search_state SET build_version = NULL`)
+		exec(`INSERT INTO entity (kind, natural_key, name) VALUES ('company', 'X' || $1::int, 'FORCA RECALCULO')`, round)
+		step("refresh, same data, without reuse", true)
+	}
+}

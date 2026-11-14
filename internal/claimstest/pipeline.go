@@ -48,13 +48,24 @@ type Pipeline struct {
 	// SearchErr is the first error of a search refresh (the Finished hook
 	// cannot fail a collection, as in the worker).
 	SearchErr error
+	// Refreshes holds, per collection id, what its search refresh did.
+	Refreshes map[int64]SearchRefresh
+}
+
+// SearchRefresh is the outcome of one search refresh: Rebuilt (the tables
+// were built and swapped in) or Stats.Unchanged (nothing searchable changed;
+// nothing built), or neither (another refresh had covered it already).
+type SearchRefresh struct {
+	Stats   search.Stats
+	Rebuilt bool
 }
 
 // NewPipeline returns a Pipeline whose resolver uses threshold as
 // CommonNameThreshold.
 func NewPipeline(pool *pgxpool.Pool, raw rawstore.Store, threshold int) *Pipeline {
 	return &Pipeline{Pool: pool, Raw: raw, Resolver: &identity.Resolver{Pool: pool, CommonNameThreshold: threshold},
-		Search: search.New(pool), Early: map[int64]identity.Result{}, Final: map[int64]identity.Result{}}
+		Search: search.New(pool), Early: map[int64]identity.Result{}, Final: map[int64]identity.Result{},
+		Refreshes: map[int64]SearchRefresh{}}
 }
 
 // Hooks are the worker's collection hooks over p's services.
@@ -86,8 +97,12 @@ func (p *Pipeline) hooks() connector.Hooks {
 			return err
 		},
 		Finished: func(ctx context.Context, collectionID int64) {
-			if _, _, err := p.Search.RefreshCollection(ctx, collectionID); err != nil && p.SearchErr == nil {
+			st, rebuilt, err := p.Search.RefreshCollection(ctx, collectionID)
+			if err != nil && p.SearchErr == nil {
 				p.SearchErr = fmt.Errorf("search refresh after collection %d: %w", collectionID, err)
+			}
+			if err == nil && p.Refreshes != nil {
+				p.Refreshes[collectionID] = SearchRefresh{Stats: st, Rebuilt: rebuilt}
 			}
 		},
 	}

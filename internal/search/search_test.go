@@ -589,7 +589,7 @@ func leftovers(f *fx) []string {
 	f.t.Helper()
 	rows, err := f.pool.Query(ctx, `SELECT c.relname::text FROM pg_class c
 		WHERE c.relnamespace = current_schema()::regnamespace
-		  AND (c.relname LIKE 'search\_%\_new%' OR c.relname = 'search_ranked') ORDER BY 1`)
+		  AND (c.relname LIKE 'search\_%\_new%' OR c.relname IN ('search_ranked', 'search_degree')) ORDER BY 1`)
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -993,9 +993,12 @@ func TestRequestsDuringRebuildCauseExactlyOneMore(t *testing.T) {
 		if attempt != 1 {
 			return
 		}
-		// Two collections finish while this rebuild is running: each marks
-		// the state dirty and waits for the rebuild lock.
-		for range 2 {
+		// Two collections finish while this rebuild is running: each adds
+		// an entity (a collection that changes nothing searchable would
+		// not be rebuilt at all), marks the state dirty and waits for the
+		// rebuild lock.
+		for i := range 2 {
+			f.entity(claims.KindCompany, fmt.Sprintf("9100000%d", i), fmt.Sprintf("ESTRELA TARDIA %d", i))
 			other := search.New(f.pool)
 			if err := other.MarkDirty(ctx); err != nil {
 				t.Error(err)
@@ -1012,6 +1015,7 @@ func TestRequestsDuringRebuildCauseExactlyOneMore(t *testing.T) {
 		}
 		time.Sleep(200 * time.Millisecond) // let both block on the lock
 	})
+	f.entity(claims.KindCompany, "91000009", "ESTRELA NOVA") // the collection that asks for the first rebuild
 	if _, _, err := first.Refresh(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -1098,6 +1102,7 @@ func TestSwapGivesUpCleanlyAndStaysDirty(t *testing.T) {
 	if _, err := reader.Exec(ctx, `SELECT count(*) FROM search_person`); err != nil {
 		t.Fatal(err)
 	}
+	f.entity(claims.KindCompany, "91000010", "ESTRELA PRESA") // something to rebuild
 	s := search.New(f.pool)
 	s.SetSwapRetry(100*time.Millisecond, 3, 10*time.Millisecond)
 	if _, _, err := s.Refresh(ctx); err == nil {

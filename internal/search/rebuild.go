@@ -2,6 +2,8 @@ package search
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -18,6 +20,13 @@ type Stats struct {
 	Entities       map[string]int64
 	FrequentTokens int
 	Duration       time.Duration
+	// Unchanged: RebuildIfDirty found that the live tables already are what
+	// a rebuild would produce, recorded the request as covered and built
+	// nothing (Entities and FrequentTokens are then not filled in).
+	Unchanged bool
+	// Reused: the build took name_norm and tokens of the entities already in
+	// the live tables from them instead of computing them again.
+	Reused bool
 }
 
 // rebuildLockKey is the session advisory lock that serializes rebuilds across
@@ -43,46 +52,126 @@ SET work_mem = '1GB';
 SET maintenance_work_mem = '2GB'`
 
 // The build (SEARCH_STRATEGY 4 to 6). Every identifier is a constant.
+//
+// The ranked table and the three search tables exist in two forms. "Fresh"
+// computes name_norm and tokens of every entity. "Reuse" takes them from the
+// live tables for the entities already there (LEFT JOIN on entity_id) and
+// computes them for the others only. Reuse is exact because both are
+// functions of the entity's name alone and an entity id has the same name
+// forever (entity rows are immutable, guard_entity_update of migration 0019,
+// and never deleted, migration 0001); it is used only while the live tables
+// were built with the same functions and statements (search_state.
+// build_version equal to buildVersion).
 const (
-	dropBuildTables = `DROP TABLE IF EXISTS search_ranked, search_company_new, search_person_new, search_other_new,
-		search_frequent_token_new`
+	dropBuildTables = `DROP TABLE IF EXISTS search_degree, search_ranked, search_company_new, search_person_new,
+		search_other_new, search_frequent_token_new`
 
 	// grau = open relationships touching the entity, all sources; a
-	// relationship of an entity with itself counts once. Person entities
-	// without any person record (left empty by identity merges) and kinds
-	// without a code (none today) are left out.
-	createRanked = `CREATE UNLOGGED TABLE search_ranked AS
-		WITH deg AS (
-			SELECT v.entity_id, count(*)::integer AS grau
-			FROM relationship r
-			CROSS JOIN LATERAL (VALUES (r.src_entity_id),
-				(CASE WHEN r.dst_entity_id <> r.src_entity_id THEN r.dst_entity_id END)) AS v(entity_id)
-			WHERE r.closed_collection_id IS NULL AND v.entity_id IS NOT NULL
-			GROUP BY v.entity_id),
-		n AS (
-			SELECT e.id,
+	// relationship of an entity with itself counts once.
+	createDegree = `CREATE UNLOGGED TABLE search_degree AS
+		SELECT v.entity_id, count(*)::integer AS grau
+		FROM relationship r
+		CROSS JOIN LATERAL (VALUES (r.src_entity_id),
+			(CASE WHEN r.dst_entity_id <> r.src_entity_id THEN r.dst_entity_id END)) AS v(entity_id)
+		WHERE r.closed_collection_id IS NULL AND v.entity_id IS NOT NULL
+		GROUP BY v.entity_id`
+
+	// The entities that may be searchable. Person entities without any
+	// person record (left empty by identity merges) are left out; kinds
+	// without a code (none today) get kind NULL and are left out later.
+	candidatesCTE = `cand AS (
+			SELECT e.id, e.name,
 				(CASE e.kind WHEN 'company' THEN 'C' WHEN 'person' THEN 'P' WHEN 'foreign' THEN 'E'
-					WHEN 'party' THEN 'A' WHEN 'public_body' THEN 'O' END)::"char" AS kind,
-				search_norm(e.name) COLLATE "C" AS name_norm
+					WHEN 'party' THEN 'A' WHEN 'public_body' THEN 'O' END)::"char" AS kind
 			FROM entity e
-			WHERE e.kind <> 'person' OR EXISTS (SELECT 1 FROM person_record p WHERE p.entity_id = e.id))
+			WHERE e.kind <> 'person' OR EXISTS (SELECT 1 FROM person_record p WHERE p.entity_id = e.id))`
+
+	// The live tables as one relation.
+	liveCTE = `live AS (
+			SELECT entity_id, 'C'::"char" AS kind, name_norm, grau FROM search_company
+			UNION ALL SELECT entity_id, kind, name_norm, grau FROM search_person
+			UNION ALL SELECT entity_id, kind, name_norm, grau FROM search_other)`
+
+	rankedHead = `CREATE UNLOGGED TABLE search_ranked AS
+		WITH ` + candidatesCTE + `, ` + liveCTE + `,
+		n AS (`
+	rankedTail = `)
 		SELECT row_number() OVER (ORDER BY coalesce(d.grau, 0) DESC, n.name_norm, n.id) AS search_rank,
 			n.id AS entity_id, n.kind, n.name_norm, coalesce(d.grau, 0) AS grau
-		FROM n LEFT JOIN deg d ON d.entity_id = n.id
+		FROM n LEFT JOIN search_degree d ON d.entity_id = n.id
 		WHERE n.name_norm IS NOT NULL AND n.kind IS NOT NULL`
+	createRankedFresh = rankedHead + `
+			SELECT c.id, c.kind, search_norm(c.name) COLLATE "C" AS name_norm FROM cand c` + rankedTail
+	createRankedReuse = rankedHead + `
+			SELECT c.id, c.kind, coalesce(l.name_norm, search_norm(c.name) COLLATE "C") AS name_norm
+			FROM cand c LEFT JOIN live l ON l.entity_id = c.id` + rankedTail
+
+	// changedSQL is false only when the live tables hold exactly the rows a
+	// build from the current data would rank: the same searchable entities,
+	// each with the same kind and the same grau. With the same build_version
+	// (so the same name_norm and tokens for an entity id) these are all the
+	// inputs of the build: search_rank orders by (grau, name_norm, id), the
+	// kind picks the table, the frequent tokens count the tokens. It
+	// compares data, not a log of writes: whatever wrote entity,
+	// person_record or relationship, and whether or not the collection that
+	// did reached its search refresh, a difference shows here. search_norm
+	// is computed only for the entities missing from the live tables (an
+	// entity there has a non-NULL name_norm, and its name cannot change).
+	changedSQL = `WITH ` + candidatesCTE + `, ` + liveCTE + `
+		SELECT EXISTS (
+			SELECT 1 FROM cand c FULL JOIN live l ON l.entity_id = c.id
+			LEFT JOIN search_degree d ON d.entity_id = c.id
+			WHERE CASE
+				WHEN l.entity_id IS NULL THEN c.kind IS NOT NULL AND search_norm(c.name) IS NOT NULL
+				WHEN c.id IS NULL THEN true
+				ELSE l.kind IS DISTINCT FROM c.kind OR l.grau IS DISTINCT FROM coalesce(d.grau, 0)
+				END)`
 
 	countRanked = `SELECT kind::text, count(*) FROM search_ranked GROUP BY kind`
 
 	// ORDER BY search_rank is mandatory: queries rely on the physical order.
-	createCompanyNew = `CREATE TABLE search_company_new AS
+	createCompanyFresh = `CREATE TABLE search_company_new AS
 		SELECT search_rank, entity_id, name_norm, grau, search_tokens(name_norm) AS tokens
 		FROM search_ranked WHERE kind = 'C' ORDER BY search_rank`
-	createPersonNew = `CREATE TABLE search_person_new AS
+	createPersonFresh = `CREATE TABLE search_person_new AS
 		SELECT search_rank, entity_id, kind, name_norm, grau, search_tokens(name_norm) AS tokens
 		FROM search_ranked WHERE kind = 'P' ORDER BY search_rank`
-	createOtherNew = `CREATE TABLE search_other_new AS
+	createOtherFresh = `CREATE TABLE search_other_new AS
 		SELECT search_rank, entity_id, kind, name_norm, grau, search_tokens(name_norm) AS tokens
 		FROM search_ranked WHERE kind IN ('E', 'A', 'O') ORDER BY search_rank`
+	createCompanyReuse = `CREATE TABLE search_company_new AS
+		SELECT r.search_rank, r.entity_id, r.name_norm, r.grau, coalesce(o.tokens, search_tokens(r.name_norm)) AS tokens
+		FROM search_ranked r LEFT JOIN search_company o ON o.entity_id = r.entity_id
+		WHERE r.kind = 'C' ORDER BY r.search_rank`
+	createPersonReuse = `CREATE TABLE search_person_new AS
+		SELECT r.search_rank, r.entity_id, r.kind, r.name_norm, r.grau, coalesce(o.tokens, search_tokens(r.name_norm)) AS tokens
+		FROM search_ranked r LEFT JOIN search_person o ON o.entity_id = r.entity_id
+		WHERE r.kind = 'P' ORDER BY r.search_rank`
+	createOtherReuse = `CREATE TABLE search_other_new AS
+		SELECT r.search_rank, r.entity_id, r.kind, r.name_norm, r.grau, coalesce(o.tokens, search_tokens(r.name_norm)) AS tokens
+		FROM search_ranked r LEFT JOIN search_other o ON o.entity_id = r.entity_id
+		WHERE r.kind IN ('E', 'A', 'O') ORDER BY r.search_rank`
+
+	// versionSQL is the build version: a digest of everything name_norm and
+	// tokens depend on — the definitions of search_norm, search_words and
+	// search_tokens as the catalogue holds them now (a migration that
+	// replaces one changes it by itself), the unaccent dictionary (extension
+	// version, options; its rules file ships with the server, hence the
+	// server version) — and $1, the digest of the build statements of this
+	// file (buildStatementsDigest).
+	versionSQL = `SELECT md5(concat_ws(E'\n', $1::text, current_setting('server_version_num'),
+		(SELECT extversion FROM pg_extension WHERE extname = 'unaccent'),
+		(SELECT d.dictinitoption FROM pg_ts_dict d WHERE d.oid = 'public.unaccent'::regdictionary),
+		pg_get_functiondef('search_norm(text)'::regprocedure),
+		pg_get_functiondef('search_words(text)'::regprocedure),
+		pg_get_functiondef('search_tokens(text)'::regprocedure)))`
+
+	// What the live tables were built with.
+	builtWithSQL = `SELECT generation, build_version, frequent_threshold FROM search_state`
+
+	// A skipped rebuild covers the request exactly as a swap would, without
+	// touching the generation (nothing to reload) or the tables.
+	coveredSQL = `UPDATE search_state SET rebuilt_from = $1, finished_collections = $2`
 
 	createFrequentNew = `CREATE TABLE search_frequent_token_new (token text NOT NULL, ndoc bigint)`
 	// The threshold applies to the sum over all search tables.
@@ -115,7 +204,7 @@ const (
 
 var (
 	buildIndexes = []string{
-		`DROP TABLE search_ranked`,
+		`DROP TABLE search_ranked, search_degree`,
 		`ALTER TABLE search_company_new ADD CONSTRAINT search_company_new_pkey PRIMARY KEY (search_rank)`,
 		`ALTER TABLE search_person_new ADD CONSTRAINT search_person_new_pkey PRIMARY KEY (search_rank)`,
 		`ALTER TABLE search_other_new ADD CONSTRAINT search_other_new_pkey PRIMARY KEY (search_rank)`,
@@ -159,6 +248,22 @@ var (
 		`ALTER INDEX search_other_new_tokens RENAME TO search_other_tokens`,
 	}
 )
+
+// buildStatementsDigest is the part of the build version that this file
+// decides: a digest of the statements that compute name_norm, tokens, the
+// rank and the tables. Editing any of them changes the build version, so the
+// first rebuild with the new code computes everything (and is never skipped)
+// instead of reusing values produced by the old statements.
+var buildStatementsDigest = func() string {
+	h := sha256.New()
+	for _, sql := range []string{createDegree, createRankedFresh, createRankedReuse, changedSQL,
+		createCompanyFresh, createPersonFresh, createOtherFresh,
+		createCompanyReuse, createPersonReuse, createOtherReuse, fillFrequentNew} {
+		h.Write([]byte(sql))
+		h.Write([]byte{0})
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}()
 
 // kindNames maps the "char" codes of the search tables back to entity kinds.
 var kindNames = map[string]string{}
@@ -230,23 +335,32 @@ func (s *Service) refresh(ctx context.Context, collectionID *int64) (Stats, bool
 // RebuildIfDirty rebuilds when Dirty, deciding after it got the rebuild
 // lock: a caller whose request was covered by a rebuild that started after
 // it, while it waited, does nothing. It reports whether it rebuilt.
+//
+// When dirty, it first checks whether the data changed anything the search
+// tables hold (changedSQL): when nothing did, and the live tables were built
+// with the current build version and frequent-token threshold, it records
+// the request as covered without building, swapping or bumping the
+// generation, and returns rebuilt = false with Stats.Unchanged set.
 func (s *Service) RebuildIfDirty(ctx context.Context) (Stats, bool, error) {
 	return s.rebuild(ctx, true)
 }
 
-// Rebuild builds the search tables from scratch from entity and relationship
-// and swaps them in (SEARCH_STRATEGY 4 to 7), whether or not they are dirty.
-// It works on empty tables too.
+// Rebuild builds the search tables from entity, person_record and
+// relationship and swaps them in (SEARCH_STRATEGY 4 to 7), whether or not
+// they are dirty, and never skips. It works on empty tables too. The result
+// is row for row what a build from empty tables gives; name_norm and tokens
+// of the entities already indexed are taken from the live tables when they
+// were built with the current build version (Stats.Reused).
 //
 // One rebuild runs at a time across processes: a second caller waits for the
-// first to finish. While building, Rebuild only reads entity, relationship
-// and person_record and writes its own *_new tables; searches keep using the
-// current tables until the swap, a short transaction that renames them. If
-// the swap cannot get its locks (a long-running search) it is retried with
-// backoff; if it never can, the built tables are dropped, an error is
-// returned and the state stays dirty. The rebuild runs on one dedicated
-// connection whose session settings are reset before it goes back to the
-// pool.
+// first to finish. While building, Rebuild only reads entity, relationship,
+// person_record and the live search tables and writes its own build tables;
+// searches keep using the current tables until the swap, a short transaction
+// that renames them. If the swap cannot get its locks (a long-running search)
+// it is retried with backoff; if it never can, the built tables are dropped,
+// an error is returned and the state stays dirty. The rebuild runs on one
+// dedicated connection whose session settings are reset before it goes back
+// to the pool.
 func (s *Service) Rebuild(ctx context.Context) (Stats, error) {
 	st, _, err := s.rebuild(ctx, false)
 	return st, err
@@ -271,7 +385,7 @@ func (s *Service) rebuild(ctx context.Context, onlyIfDirty bool) (st Stats, rebu
 		if err != nil {
 			// Do not leave a half-built copy behind. When the connection
 			// is gone (pgx closes it on cancellation) the lock went with it
-			// and another rebuild may own the *_new tables now: they are
+			// and another rebuild may own the build tables now: they are
 			// left for the next rebuild, which drops leftovers first.
 			if _, derr := conn.Exec(rctx, dropBuildTables); derr != nil {
 				err = errors.Join(err, fmt.Errorf("drop the half-built tables: %w", derr))
@@ -301,9 +415,17 @@ func (s *Service) rebuild(ctx context.Context, onlyIfDirty bool) (st Stats, rebu
 	}
 
 	start := time.Now()
-	st, err = s.build(ctx, conn)
+	var version string
+	st, version, err = s.build(ctx, conn, onlyIfDirty)
+	if err == nil && st.Unchanged {
+		if _, err = conn.Exec(ctx, coveredSQL, requested, finished); err != nil {
+			return Stats{}, false, fmt.Errorf("search: rebuild: record an unchanged state: %w", err)
+		}
+		st.Duration = time.Since(start)
+		return st, false, nil
+	}
 	if err == nil {
-		err = s.swap(ctx, conn, requested, finished)
+		err = s.swap(ctx, conn, requested, finished, version)
 	}
 	if err != nil {
 		return Stats{}, false, fmt.Errorf("search: rebuild: %w", err)
@@ -321,7 +443,16 @@ func discard(conn *pgxpool.Conn) {
 	_ = c.Close(ctx)
 }
 
-func (s *Service) build(ctx context.Context, conn *pgxpool.Conn) (Stats, error) {
+// build builds the new tables and returns the build version they were built
+// with. With mayskip, it first checks whether anything changed and returns
+// Stats.Unchanged without building when nothing did.
+//
+// The degree table, the check and the ranked table — every read of entity,
+// person_record and relationship — run in one REPEATABLE READ transaction:
+// the tables are built from one snapshot, and the check judges that same
+// snapshot. The live search tables it also reads change only at a swap,
+// which needs the rebuild lock this build holds.
+func (s *Service) build(ctx context.Context, conn *pgxpool.Conn, mayskip bool) (Stats, string, error) {
 	st := Stats{Entities: map[string]int64{}}
 	for _, k := range kindNames {
 		st.Entities[k] = 0
@@ -331,50 +462,102 @@ func (s *Service) build(ctx context.Context, conn *pgxpool.Conn) (Stats, error) 
 		return err
 	}
 	// Leftovers of an interrupted rebuild are dropped first.
-	for _, sql := range []string{rebuildSettings, dropBuildTables, createRanked} {
+	for _, sql := range []string{rebuildSettings, dropBuildTables} {
 		if err := exec(sql); err != nil {
-			return st, err
+			return st, "", err
 		}
 	}
+	var version string
+	if err := conn.QueryRow(ctx, versionSQL, buildStatementsDigest).Scan(&version); err != nil {
+		return st, "", fmt.Errorf("build version: %w", err)
+	}
+	var generation int64
+	var builtWith *string
+	var threshold *int64
+	if err := conn.QueryRow(ctx, builtWithSQL).Scan(&generation, &builtWith, &threshold); err != nil {
+		return st, "", err
+	}
+	// The live tables hold values computed exactly as this build would
+	// compute them only when they were built with this version.
+	st.Reused = builtWith != nil && *builtWith == version
+	mayskip = mayskip && st.Reused && generation > 0 && threshold != nil && *threshold == s.frequentThreshold
+
+	err := pgx.BeginTxFunc(ctx, conn, pgx.TxOptions{IsoLevel: pgx.RepeatableRead}, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, createDegree); err != nil {
+			return err
+		}
+		if mayskip {
+			var changed bool
+			if err := tx.QueryRow(ctx, changedSQL).Scan(&changed); err != nil {
+				return fmt.Errorf("change check: %w", err)
+			}
+			if !changed {
+				st.Unchanged = true
+				_, err := tx.Exec(ctx, `DROP TABLE search_degree`)
+				return err
+			}
+		}
+		ranked := createRankedFresh
+		if st.Reused {
+			ranked = createRankedReuse
+		}
+		_, err := tx.Exec(ctx, ranked)
+		return err
+	})
+	if err != nil || st.Unchanged {
+		return st, version, err
+	}
+
 	rows, err := conn.Query(ctx, countRanked)
 	if err != nil {
-		return st, err
+		return st, "", err
 	}
 	for rows.Next() {
 		var code string
 		var n int64
 		if err := rows.Scan(&code, &n); err != nil {
 			rows.Close()
-			return st, err
+			return st, "", err
 		}
 		st.Entities[kindNames[code]] = n
 	}
 	if err := rows.Err(); err != nil {
-		return st, err
+		return st, "", err
 	}
-	for _, sql := range append([]string{createCompanyNew, createPersonNew, createOtherNew}, buildIndexes...) {
+	tables := []string{createCompanyFresh, createPersonFresh, createOtherFresh}
+	if st.Reused {
+		tables = []string{createCompanyReuse, createPersonReuse, createOtherReuse}
+	}
+	for _, sql := range append(tables, buildIndexes...) {
 		if err := exec(sql); err != nil {
-			return st, err
+			return st, "", err
 		}
 	}
 	tag, err := conn.Exec(ctx, fillFrequentNew, s.frequentThreshold)
 	if err != nil {
-		return st, err
+		return st, "", err
 	}
 	st.FrequentTokens = int(tag.RowsAffected())
 	for _, sql := range afterFrequent {
 		if err := exec(sql); err != nil {
-			return st, err
+			return st, "", err
 		}
 	}
-	return st, nil
+	return st, version, nil
 }
+
+// errVersionChanged: the functions the build version covers were replaced
+// while the tables were being built (a migration ran meanwhile), so the new
+// tables may mix values of both definitions. They are not swapped in; the
+// state stays dirty and the next rebuild computes everything.
+var errVersionChanged = errors.New("the search functions changed during the build")
 
 // swap renames the new tables in, retrying when its locks time out. requested
 // is the request the build covers, stored as rebuilt_from; finished, the
 // number of finished collections read before the build read any data, is
-// stored as finished_collections.
-func (s *Service) swap(ctx context.Context, conn *pgxpool.Conn, requested *time.Time, finished int64) error {
+// stored as finished_collections; version, the build version the tables were
+// built with, as build_version, with the frequent-token threshold.
+func (s *Service) swap(ctx context.Context, conn *pgxpool.Conn, requested *time.Time, finished int64, version string) error {
 	backoff := s.swapBackoff
 	var err error
 	for attempt := 1; attempt <= s.swapAttempts; attempt++ {
@@ -386,14 +569,22 @@ func (s *Service) swap(ctx context.Context, conn *pgxpool.Conn, requested *time.
 				fmt.Sprintf("%dms", s.swapLockTimeout.Milliseconds())); err != nil {
 				return err
 			}
+			var now string
+			if err := tx.QueryRow(ctx, versionSQL, buildStatementsDigest).Scan(&now); err != nil {
+				return err
+			}
+			if now != version {
+				return errVersionChanged
+			}
 			for _, sql := range swapStatements {
 				if _, err := tx.Exec(ctx, sql); err != nil {
 					return err
 				}
 			}
 			_, err := tx.Exec(ctx, `UPDATE search_state
-				SET generation = generation + 1, rebuilt_at = now(), rebuilt_from = $1, finished_collections = $2`,
-				requested, finished)
+				SET generation = generation + 1, rebuilt_at = now(), rebuilt_from = $1, finished_collections = $2,
+					build_version = $3, frequent_threshold = $4`,
+				requested, finished, version, s.frequentThreshold)
 			return err
 		})
 		var pgErr *pgconn.PgError

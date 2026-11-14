@@ -138,7 +138,10 @@ func collectionHooks(c unseenCloser, r identityResolver, s searchRebuilder) conn
 					"collection", collectionID, "error", err)
 			case rebuilt:
 				slog.Info("search rebuilt", "collection", collectionID, "entities", st.Entities,
-					"frequent_tokens", st.FrequentTokens, "duration", st.Duration)
+					"frequent_tokens", st.FrequentTokens, "reused", st.Reused, "duration", st.Duration)
+			case st.Unchanged:
+				slog.Info("search unchanged by the collection; rebuild skipped", "collection", collectionID,
+					"duration", st.Duration)
 			default:
 				slog.Info("search already rebuilt by another worker", "collection", collectionID)
 			}
@@ -162,7 +165,9 @@ func searchCatchUp(ctx context.Context, s searchRebuilder) <-chan struct{} {
 			slog.Error("search catch-up rebuild failed", "error", err)
 		case rebuilt:
 			slog.Info("search caught up", "entities", st.Entities, "frequent_tokens", st.FrequentTokens,
-				"duration", st.Duration)
+				"reused", st.Reused, "duration", st.Duration)
+		case st.Unchanged:
+			slog.Info("search catch-up: nothing changed; rebuild skipped", "duration", st.Duration)
 		}
 	}()
 	return done
