@@ -79,14 +79,17 @@ Options are environment variables (the script's header lists all of them):
 | `KEEP=1` | with `STEP=all`, leave the stack up at the end (remove it later with `STEP=down`) |
 | `BENCH_PROFILE` | `roomy` (default) or `pressure`, below |
 | `BENCH_NOCOW=1` | btrfs only: set No_COW (`chattr +C`) on the empty pgdata volume before `initdb` |
-| `BENCH_PG_EXTRA` | `name=value;…` applied with `ALTER SYSTEM` (bench database only) |
+| `BENCH_PG_EXTRA` | `name=value;…` applied with `ALTER SYSTEM` (bench database only). It cannot change a parameter that `deploy/compose.yml` passes on the `postgres` command line (the command line wins): for those, set the `PG_*` variable instead, e.g. `PG_MAX_WAL_SIZE=16GB PG_CHECKPOINT_TIMEOUT=60min`; `config.txt` shows the values in force |
 | `BENCH_WORKER_SET` | `name=value;…` applied with `ALTER ROLE geoint_worker SET` (e.g. `synchronous_commit=off`) |
 | `BENCH_SQL_AFTER_MIGRATE` | a `.sql` file run as the owner after the migrations (experiments: drop a trigger or an index) |
 | `BENCH_SAMPLE_DIR` | another sample (default `data/bench/receita/GO`) |
 
 Run **one configuration at a time** and note what else the machine is doing:
 `config.txt` records the number of other running containers and the memory
-available at the start.
+available at the start. Compare a run only with a control **of the same day
+and host state**: the IO-bound phases of the `pressure` profile moved by 5 % to
+17 % between two days with the same configuration (a busy, swapping host
+against a freshly rebooted one), while the CPU-bound steps stayed within 3 %.
 
 ### PostgreSQL profiles
 
