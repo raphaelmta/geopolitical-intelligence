@@ -505,27 +505,53 @@ section 7.
   `guard_update` could refuse the row — (a) `ROW(OLD.c…) IS DISTINCT FROM
   ROW(NEW.c…)` over every column off the allow-list, generated from the
   catalogue by `install_update_guard(table, allow-list)`; (b) reopening; (c)
-  `last_seen_collection_id` set to NULL or decreasing; (d)
-  `update_guard_columns_changed(table, columns)`, true when the table's
-  columns are no longer those (a) was generated for. A row that passes the
-  clause runs the original function, so refusals, the order of the checks,
-  messages and SQLSTATE are identical by construction; a row that fails it
-  would have passed (each type's equality agrees with the jsonb comparison
-  for the types of these tables). **Default-deny at run time for a column
-  added later**, not only in CI: (d) makes every row of such a table go
-  through `guard_update` again, so the new column is immutable exactly as
-  before (and `TestUpdateGuardsDenyByDefault` of `internal/claims` passes
-  unchanged); `TestUpdateGuardCatalogue` fails until a migration decides the
-  column (`SELECT install_update_guard(…)`, with the column on the allow-list
-  if it may change). (d) is declared `IMMUTABLE` although it reads
-  `pg_attribute`, on purpose: the planner folds it once per statement
-  (trigger `WHEN` clauses are prepared at each execution, never cached), not
-  once per row — pinned by `TestUpdateGuardFastPath` (function statistics:
-  0 calls of `guard_update` and 1 column check for a "seen" update of every
-  row; one `guard_update` call per row once a column is unguarded). The
+  `last_seen_collection_id` set to NULL or decreasing; (d), a second layer
+  only, `update_guard_columns_changed(table, columns)`, true when the
+  table's columns are no longer those (a) was generated for. A row that
+  passes the clause runs the original function, so refusals, the order of
+  the checks, messages and SQLSTATE are identical by construction; a row that
+  fails it would have passed (each type's equality agrees with the jsonb
+  comparison for the types of these tables; pinned with values written
+  differently by `TestUpdateGuardEqualValuesWrittenDifferently`).
+  **Default-deny at run time for a column added later, at every isolation
+  level:** the event trigger `geoint_update_guard_reinstall`
+  (`ddl_command_end`, `ALTER TABLE`; schema `geoint_guard`, one for the
+  database) re-installs the guard of a guarded table with its current
+  allow-list in the same transaction as the ALTER, so a new column is
+  compared by (a) from the moment it exists; a statement that sees the column
+  sees the new clause too (both come from the relation cache), including a
+  REPEATABLE READ transaction whose snapshot predates the ALTER
+  (`TestUpdateGuardNewColumnUnderAnOlderSnapshot`). `TestUpdateGuardCatalogue`
+  fails until the column's mutability is decided (in the tests' lists, and by
+  a migration calling `install_update_guard` if it may change). An ALTER that
+  would leave the table without its guard (`DROP COLUMN … CASCADE` of a
+  compared column) is refused; a migration that drops a column runs, in one
+  transaction, `SET LOCAL geoint.update_guard_installing = 'on'`, the
+  `DROP COLUMN … CASCADE` and `install_update_guard`. Re-installing keeps the
+  trigger's enabled state (`CREATE OR REPLACE TRIGGER` alone resets it to
+  `O`; verified), and the catalogue test requires one state,
+  `guardTriggerEnabled` (`O`; task 6 changes it to `A`). (d) only acts when
+  the event trigger did not run (single-user mode, `event_triggers = off`,
+  or that switch): it reads `pg_attribute` through the statement's snapshot,
+  so it is best effort. It is declared `IMMUTABLE` although it reads the
+  catalogue, on purpose: the planner folds it once per statement (trigger
+  `WHEN` clauses are prepared at each execution, never cached), not once per
+  row — pinned by `TestUpdateGuardFastPath` (function statistics: 0 calls of
+  `guard_update` and 1 column check for a "seen" update of every row; one
+  `guard_update` call per row when a column was added with the event trigger
+  skipped). **search_path:** the worker may `CREATE` in the schema (0021), so
+  every trigger function of the schema (`guard_update`, `forbid_delete`,
+  `forbid_update`, `guard_proposal_update`, `guard_collection_status`,
+  `guard_entity_update`) and the functions of 0023 run with `search_path =
+  pg_catalog, pg_temp`; before, an exact-type `to_jsonb(relationship)`
+  created by the worker switched `guard_update` off
+  (`TestWorkerCannotShadowGuardFunctions` shows the attack on an unpinned
+  function, then its failure; `TestTriggerFunctionsPinSearchPath` fails on
+  an unpinned trigger, event trigger or SECURITY DEFINER function). The
   migration takes `SHARE ROW EXCLUSIVE` on the three tables for milliseconds
-  (catalogue only: no scan, no rewrite; reads continue); there is no moment
-  without a guard. Tests: `TestUpdateGuardCharacterisation` (written and
+  (catalogue only: no scan, no rewrite; reads continue; `lock_timeout` 5 s);
+  there is no moment without a guard; `CREATE EVENT TRIGGER` needs the owner
+  to be a superuser, which it is (0021). Tests: `TestUpdateGuardCharacterisation` (written and
   green on the old guard first: every column × no-op / change / NULL /
   collection below, equal, above × never seen / seen / closed rows ×
   owner, worker, API; combinations of allowed and forbidden columns; 435
@@ -540,6 +566,13 @@ section 7.
   53.2 µs/row with the original guard, 34.0 with the new one, 33.5 without
   any guard — guard cost 19.7 → 0.5 µs/row; company_version 45.7 / 29.0 /
   27.5 — 18.3 → 1.5 µs/row. The "seen" statements are 36–37 % faster.
+  Cost of the pinned `search_path` (same benchmark, fix round 1; pinned /
+  unpinned, µs/row): "seen" update with the installed guard 34.33 / 34.46
+  (relationship) and 28.51 / 28.32 (company_version) — no function is called;
+  bulk `INSERT` into relationship 93.03 / 93.35 — no row trigger fires on
+  INSERT; `UPDATE identity_proposal SET connections` (Resolve's refresh,
+  `guard_proposal_update` on every row) 14.29 / 13.62, 11.42 without the
+  trigger: the pin adds about 0.7 µs per proposal row (guard 2.2 → 2.9 µs).
 
 ### Task 5 — Search: skip when nothing changed, reuse what is already computed
 

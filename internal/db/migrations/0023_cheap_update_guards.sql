@@ -1,26 +1,23 @@
 -- +goose Up
 
 -- Cheap update guards for the three big claim tables (relationship,
--- person_record, company_version). The rule does not change: the guard of
--- migration 0001 (guard_update, default-deny with an allow-list) stays the
--- one and only judge of every update it sees. What changes is that it no
--- longer sees the updates it would certainly let through: each trigger gets
--- a WHEN clause, evaluated by the executor without calling any function per
--- row, that is true whenever guard_update could refuse the row:
+-- person_record, company_version), and search_path pinned on every trigger
+-- function of the schema.
+--
+-- 1. The guard. The rule does not change: the guard of migration 0001
+-- (guard_update, default-deny with an allow-list) stays the one and only
+-- judge of every update it sees. What changes is that it no longer sees the
+-- updates it would certainly let through: each trigger gets a WHEN clause,
+-- evaluated by the executor without calling any function per row, that is
+-- true whenever guard_update could refuse the row:
 --
 --   (a) a column outside the allow-list changes — ROW(OLD.c, …) IS DISTINCT
 --       FROM ROW(NEW.c, …) over every such column, listed from the catalogue
---       when the trigger is installed;
+--       when the trigger is installed (install_update_guard);
 --   (b) a closed row's closed_collection_id changes (reopening);
 --   (c) a non-NULL last_seen_collection_id becomes NULL or smaller;
---   (d) the table's columns are no longer the ones (a) lists:
---       update_guard_columns_changed below. A column added later without
---       re-installing the guard makes (d) true for every row, so every
---       update goes through guard_update again and the new column is
---       immutable exactly as before this migration (default-deny at run
---       time); TestUpdateGuardCatalogue fails until a migration decides the
---       column (re-run install_update_guard, with the column on the
---       allow-list if it may change).
+--   (d) second layer only: the table's columns are no longer the ones (a)
+--       lists (update_guard_columns_changed, below).
 --
 -- A row where the clause is true runs guard_update itself, with the same
 -- arguments: same refusals, same order of checks, same messages and
@@ -31,23 +28,70 @@
 -- (last_seen_collection_id moving forward) and the identity re-pointing
 -- (entity ids) no longer call a function at all.
 --
--- (d) is a plpgsql function declared IMMUTABLE on purpose although it reads
--- the catalogue: with constant arguments, the planner evaluates it once when
--- a statement starts (trigger WHEN clauses are prepared for each execution
--- of a statement and never kept in a cached plan), not once per row. It is
--- meant for these WHEN clauses only.
+-- 2. Columns added later: default-deny at run time, at every isolation
+-- level. The event trigger geoint_update_guard_reinstall (ddl_command_end,
+-- ALTER TABLE) re-installs <table>_guard_update, with its current
+-- allow-list, in the same transaction as any ALTER TABLE of a guarded
+-- table. A new column is therefore compared by (a) from the moment it
+-- exists: every statement that can see the column also sees the new WHEN
+-- clause (both come from the relation cache, not from the transaction's
+-- snapshot), so it is immutable until a migration puts it on the
+-- allow-list. An ALTER TABLE that would leave a guarded table without its
+-- guard (DROP COLUMN … CASCADE of a column the WHEN clause compares) is
+-- refused. TestUpdateGuardCatalogue fails until the column's mutability is
+-- decided in the test's lists (and, if it may change, by a migration that
+-- calls install_update_guard with the column on the allow-list).
+--   (d) only matters when the event trigger does not run (single-user mode,
+--   event_triggers = off, or the re-install switch below): every row of the
+--   table then goes through guard_update again. It reads pg_attribute
+--   through the statement's snapshot, so a REPEATABLE READ transaction whose
+--   snapshot predates the ALTER does not see the new column there: it is a
+--   best-effort fallback, not the guarantee. It is a plpgsql function
+--   declared IMMUTABLE on purpose although it reads the catalogue: with
+--   constant arguments, the planner evaluates it once when a statement
+--   starts (trigger WHEN clauses are prepared for each execution of a
+--   statement and never kept in a cached plan), not once per row.
+--
+--   The event trigger is database-wide, so it lives in a schema of its own
+--   (geoint_guard, owner only) and serves every schema migrated by this
+--   file (one per test). CREATE EVENT TRIGGER needs a superuser: the owner
+--   is one (0021). The function skips its own nested ALTER TABLE (restoring
+--   the trigger's enabled state) through the transaction-local setting
+--   geoint.update_guard_installing; only the tables' owner can ALTER them,
+--   so the setting gives no one else anything.
+--
+-- 3. search_path. The worker may CREATE in this schema (0021). A trigger
+-- function that resolves a name through the caller's search_path could be
+-- given the worker's function instead of the built-in one (for instance an
+-- exact-type to_jsonb(relationship) beats pg_catalog.to_jsonb(anyelement)),
+-- switching the rule off. Every trigger function of the schema, and the
+-- functions here, run with search_path = pg_catalog, pg_temp; nothing they
+-- use lives in the application schema except what they name with it.
+-- TestTriggerFunctionsPinSearchPath fails on a trigger function, event
+-- trigger function or SECURITY DEFINER function without it.
 --
 -- Safe on the national base (≈ 70 M company_version, 50 M relationship
--- rows): CREATE OR REPLACE TRIGGER rewrites one pg_trigger row, it neither
--- scans nor rewrites a table. It takes a SHARE ROW EXCLUSIVE lock on each of
--- the three tables (reads go on, writes wait) for milliseconds; the old
--- definition is replaced in place under the same name, inside this
--- migration's single transaction, so no moment exists without a guard.
--- `make migrate` stops the api and the worker first, so nothing waits.
+-- rows): CREATE OR REPLACE TRIGGER rewrites one pg_trigger row, ALTER
+-- FUNCTION one pg_proc row; nothing scans or rewrites a table. It takes a
+-- SHARE ROW EXCLUSIVE lock on each of the three tables (reads go on, writes
+-- wait) for milliseconds; the old definition is replaced in place under the
+-- same name, inside this migration's single transaction, so no moment
+-- exists without a guard. `make migrate` stops the api and the worker
+-- first; lock_timeout makes a migration run beside a writer fail and be
+-- retried rather than queue every other writer behind it.
+SET LOCAL lock_timeout = '5s';
+
+-- Trigger functions of earlier migrations: no body changes.
+ALTER FUNCTION forbid_delete() SET search_path = pg_catalog, pg_temp;
+ALTER FUNCTION forbid_update() SET search_path = pg_catalog, pg_temp;
+ALTER FUNCTION guard_update() SET search_path = pg_catalog, pg_temp;
+ALTER FUNCTION guard_proposal_update() SET search_path = pg_catalog, pg_temp;
+ALTER FUNCTION guard_collection_status() SET search_path = pg_catalog, pg_temp;
+ALTER FUNCTION guard_entity_update() SET search_path = pg_catalog, pg_temp;
 
 -- +goose StatementBegin
 CREATE FUNCTION update_guard_columns_changed(tbl regclass, cols text[]) RETURNS boolean
-    LANGUAGE plpgsql IMMUTABLE AS $$
+    LANGUAGE plpgsql IMMUTABLE SET search_path = pg_catalog, pg_temp AS $$
 BEGIN
     RETURN ARRAY(SELECT a.attname::text FROM pg_catalog.pg_attribute a
                  WHERE a.attrelid = tbl AND a.attnum > 0 AND NOT a.attisdropped
@@ -55,17 +99,32 @@ BEGIN
 END
 $$;
 -- +goose StatementEnd
+COMMENT ON FUNCTION update_guard_columns_changed(regclass, text[]) IS
+    'Reads the catalogue: declared IMMUTABLE only so that the WHEN clause of an update guard (0023) folds it once per statement. Never use it in an index, a generated column, a view, a default or a constraint.';
+-- Called with the privileges of whoever updates the table (the WHEN clause
+-- is prepared as that role): granted explicitly rather than through PUBLIC,
+-- so that revoking PUBLIC's EXECUTE from the schema's functions later does
+-- not make every update of the three tables fail.
+REVOKE EXECUTE ON FUNCTION update_guard_columns_changed(regclass, text[]) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION update_guard_columns_changed(regclass, text[]) TO geoint_worker, geoint_api;
 
 -- Installs (or re-installs) <table>_guard_update: guard_update(allowed…)
 -- behind the WHEN clause described above, generated from the table's
--- current columns. A later migration that adds a column to one of these
--- tables calls it again, with the column on the allow-list if it may change.
+-- current columns, keeping the trigger's enabled state (CREATE OR REPLACE
+-- TRIGGER alone would reset it to ENABLE). A later migration that puts a new
+-- column on the allow-list calls it again.
 -- +goose StatementBegin
-CREATE FUNCTION install_update_guard(tbl regclass, allowed text[]) RETURNS void LANGUAGE plpgsql AS $$
+CREATE FUNCTION install_update_guard(tbl regclass, allowed text[]) RETURNS void
+    LANGUAGE plpgsql SET search_path = pg_catalog, pg_temp AS $$
 DECLARE
+    nsp    text := (SELECT n.nspname FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                    WHERE c.oid = tbl);
+    trg    text := (SELECT c.relname FROM pg_catalog.pg_class c WHERE c.oid = tbl) || '_guard_update';
     cols   text[] := ARRAY(SELECT a.attname::text FROM pg_catalog.pg_attribute a
                            WHERE a.attrelid = tbl AND a.attnum > 0 AND NOT a.attisdropped
                            ORDER BY a.attnum);
+    state  "char" := (SELECT t.tgenabled FROM pg_catalog.pg_trigger t WHERE t.tgrelid = tbl AND t.tgname = trg);
+    was    text := current_setting('geoint.update_guard_installing', true);
     frozen text[];
     cond   text;
 BEGIN
@@ -88,14 +147,73 @@ BEGIN
                      || ' AND (NEW.last_seen_collection_id IS NULL'
                      || ' OR NEW.last_seen_collection_id < OLD.last_seen_collection_id))';
     END IF;
-    cond := cond || format(' OR update_guard_columns_changed(%L::regclass, %L::text[])', tbl::text, cols);
-    EXECUTE format('CREATE OR REPLACE TRIGGER %I BEFORE UPDATE ON %s FOR EACH ROW WHEN (%s) EXECUTE FUNCTION guard_update(%s)',
-        (SELECT relname FROM pg_catalog.pg_class WHERE oid = tbl) || '_guard_update', tbl, cond,
+    cond := cond || format(' OR %I.update_guard_columns_changed(%L::regclass, %L::text[])', nsp, tbl::text, cols);
+    PERFORM set_config('geoint.update_guard_installing', 'on', true);
+    EXECUTE format('CREATE OR REPLACE TRIGGER %I BEFORE UPDATE ON %s FOR EACH ROW WHEN (%s) EXECUTE FUNCTION %I.guard_update(%s)',
+        trg, tbl, cond, nsp,
         (SELECT string_agg(quote_literal(c), ', ' ORDER BY n) FROM unnest(allowed) WITH ORDINALITY AS u(c, n)));
+    IF state = 'A' THEN
+        EXECUTE format('ALTER TABLE %s ENABLE ALWAYS TRIGGER %I', tbl, trg);
+    ELSIF state = 'R' THEN
+        EXECUTE format('ALTER TABLE %s ENABLE REPLICA TRIGGER %I', tbl, trg);
+    ELSIF state = 'D' THEN
+        EXECUTE format('ALTER TABLE %s DISABLE TRIGGER %I', tbl, trg);
+    END IF;
+    PERFORM set_config('geoint.update_guard_installing', coalesce(was, ''), true);
 END
 $$;
 -- +goose StatementEnd
 REVOKE EXECUTE ON FUNCTION install_update_guard(regclass, text[]) FROM PUBLIC;
+
+-- The event trigger: one for the database, created once (concurrent
+-- migrations of several schemas wait for each other on the advisory lock).
+-- +goose StatementBegin
+DO $$
+BEGIN
+    PERFORM pg_advisory_xact_lock(hashtext('geoint_update_guard_reinstall'));
+    CREATE SCHEMA IF NOT EXISTS geoint_guard;
+    REVOKE ALL ON SCHEMA geoint_guard FROM PUBLIC;
+    -- For every ALTER TABLE of relationship, person_record or
+    -- company_version in a schema that has install_update_guard: re-install
+    -- the guard with its current allow-list, or refuse the ALTER if it
+    -- dropped the guard. Any other table: nothing.
+    CREATE OR REPLACE FUNCTION geoint_guard.reinstall_update_guards() RETURNS event_trigger
+        LANGUAGE plpgsql SET search_path = pg_catalog, pg_temp AS $f$
+    DECLARE
+        r    record;
+        args text[];
+    BEGIN
+        IF current_setting('geoint.update_guard_installing', true) = 'on' THEN
+            RETURN;
+        END IF;
+        FOR r IN SELECT DISTINCT c.oid, c.relname, n.nspname
+                 FROM pg_catalog.pg_event_trigger_ddl_commands() d
+                 JOIN pg_catalog.pg_class c ON c.oid = d.objid
+                 JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                 WHERE d.classid = 'pg_catalog.pg_class'::regclass
+                   AND c.relname IN ('relationship', 'person_record', 'company_version')
+                   AND to_regprocedure(format('%I.install_update_guard(regclass, text[])', n.nspname)) IS NOT NULL
+        LOOP
+            SELECT array_remove(string_to_array(encode(t.tgargs, 'escape'), '\000'), '')
+              INTO args
+              FROM pg_catalog.pg_trigger t
+              WHERE t.tgrelid = r.oid AND t.tgname = r.relname || '_guard_update';
+            IF NOT FOUND THEN
+                RAISE EXCEPTION 'ALTER TABLE %.% would leave the table without its update guard (%_guard_update): '
+                    'never DROP … CASCADE a column the guard compares; re-install the guard instead',
+                    r.nspname, r.relname, r.relname;
+            END IF;
+            EXECUTE format('SELECT %I.install_update_guard($1, $2)', r.nspname) USING r.oid::regclass, args;
+        END LOOP;
+    END
+    $f$;
+    IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_event_trigger WHERE evtname = 'geoint_update_guard_reinstall') THEN
+        CREATE EVENT TRIGGER geoint_update_guard_reinstall ON ddl_command_end
+            WHEN TAG IN ('ALTER TABLE') EXECUTE FUNCTION geoint_guard.reinstall_update_guards();
+    END IF;
+END
+$$;
+-- +goose StatementEnd
 
 -- The allow-lists of migration 0001, unchanged.
 SELECT install_update_guard('relationship', ARRAY['src_entity_id', 'dst_entity_id', 'last_seen_collection_id',
@@ -104,11 +222,19 @@ SELECT install_update_guard('person_record', ARRAY['entity_id', 'identity_confid
 SELECT install_update_guard('company_version', ARRAY['last_seen_collection_id', 'closed_collection_id']);
 
 -- +goose Down
+-- The event trigger serves every schema of the database and skips a schema
+-- without install_update_guard: it stays.
+DROP FUNCTION install_update_guard(regclass, text[]);
 CREATE OR REPLACE TRIGGER relationship_guard_update BEFORE UPDATE ON relationship FOR EACH ROW EXECUTE FUNCTION guard_update(
     'src_entity_id', 'dst_entity_id', 'last_seen_collection_id', 'closed_collection_id', 'valid_to_after', 'valid_to_before');
 CREATE OR REPLACE TRIGGER person_record_guard_update BEFORE UPDATE ON person_record FOR EACH ROW EXECUTE FUNCTION guard_update(
     'entity_id', 'identity_confidence', 'locked_by_decision_id');
 CREATE OR REPLACE TRIGGER company_version_guard_update BEFORE UPDATE ON company_version FOR EACH ROW EXECUTE FUNCTION guard_update(
     'last_seen_collection_id', 'closed_collection_id');
-DROP FUNCTION install_update_guard(regclass, text[]);
 DROP FUNCTION update_guard_columns_changed(regclass, text[]);
+ALTER FUNCTION forbid_delete() RESET search_path;
+ALTER FUNCTION forbid_update() RESET search_path;
+ALTER FUNCTION guard_update() RESET search_path;
+ALTER FUNCTION guard_proposal_update() RESET search_path;
+ALTER FUNCTION guard_collection_status() RESET search_path;
+ALTER FUNCTION guard_entity_update() RESET search_path;

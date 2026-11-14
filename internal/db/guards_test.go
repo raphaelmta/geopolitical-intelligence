@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -509,20 +511,47 @@ func TestUpdateGuardCharacterisation(t *testing.T) {
 }
 
 // TestUpdateGuardCharacterisationWithAnUnguardedColumn: a column added
-// without deciding its mutability is immutable, and nothing else changes.
+// without deciding its mutability is immutable, and nothing else changes —
+// through the event trigger that re-installs the guard in the ALTER's
+// transaction, and through the fallback (d) when the event trigger is
+// skipped.
 func TestUpdateGuardCharacterisationWithAnUnguardedColumn(t *testing.T) {
-	env := newRoleEnv(t)
-	f := newGuardFixture(t, env.owner)
-	for _, table := range guardedTables {
-		if _, err := env.owner.Exec(roleCtx, "ALTER TABLE "+table+" ADD COLUMN extra text"); err != nil {
+	for _, bypass := range []bool{false, true} {
+		t.Run(map[bool]string{false: "event trigger", true: "fallback"}[bypass], func(t *testing.T) {
+			env := newRoleEnv(t)
+			f := newGuardFixture(t, env.owner)
+			for _, table := range guardedTables {
+				addColumn(t, env.owner, table, "extra text", bypass)
+			}
+			for _, r := range []struct {
+				name string
+				pool *pgxpool.Pool
+			}{{"owner", env.owner}, {db.WorkerRole, env.worker}, {db.APIRole, env.api}} {
+				characterise(t, f, r.pool, r.name, []string{"extra"})
+			}
+		})
+	}
+}
+
+// addColumn adds a column as the owner; bypass skips the event trigger
+// (geoint.update_guard_installing), leaving the guard as it was installed.
+func addColumn(t *testing.T, owner *pgxpool.Pool, table, def string, bypass bool) {
+	t.Helper()
+	tx, err := owner.Begin(roleCtx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(roleCtx) }()
+	if bypass {
+		if _, err := tx.Exec(roleCtx, `SET LOCAL geoint.update_guard_installing = 'on'`); err != nil {
 			t.Fatal(err)
 		}
 	}
-	for _, r := range []struct {
-		name string
-		pool *pgxpool.Pool
-	}{{"owner", env.owner}, {db.WorkerRole, env.worker}, {db.APIRole, env.api}} {
-		characterise(t, f, r.pool, r.name, []string{"extra"})
+	if _, err := tx.Exec(roleCtx, "ALTER TABLE "+table+" ADD COLUMN "+def); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(roleCtx); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -596,6 +625,11 @@ func TestUpdateGuardMatchesTheOriginal(t *testing.T) {
 	}
 }
 
+// guardTriggerEnabled is the one state the guards must be in (pg_trigger.tgenabled):
+// 'O' fires in origin and local sessions. Task 6 (session_replication_role =
+// replica for the loaders) changes it to 'A' here and in a migration.
+const guardTriggerEnabled = "O"
+
 // guardTrigger is the catalogue view of <table>_guard_update.
 type guardTrigger struct {
 	oid      uint32
@@ -603,18 +637,21 @@ type guardTrigger struct {
 	enabled  string
 	function string
 	args     []string
-	def      string
+	layout   []string // the column list given to update_guard_columns_changed
 	deps     []string // columns its WHEN clause depends on
 }
+
+var layoutArg = regexp.MustCompile(`update_guard_columns_changed\('[^']*'::regclass, ('(?:[^']|'')*')::text\[\]\)`)
 
 func readGuardTrigger(t *testing.T, owner *pgxpool.Pool, table string) (guardTrigger, bool) {
 	t.Helper()
 	var g guardTrigger
-	var rawArgs string
-	err := owner.QueryRow(roleCtx, `SELECT tg.oid, tg.tgtype, tg.tgenabled::text, tg.tgfoid::regproc::text,
+	var rawArgs, def string
+	err := owner.QueryRow(roleCtx, `SELECT tg.oid, tg.tgtype, tg.tgenabled::text, p.proname::text,
 			encode(tg.tgargs, 'escape'), pg_get_triggerdef(tg.oid)
-		FROM pg_trigger tg WHERE tg.tgrelid = $1::regclass AND tg.tgname = $1 || '_guard_update'`, table).
-		Scan(&g.oid, &g.tgtype, &g.enabled, &g.function, &rawArgs, &g.def)
+		FROM pg_trigger tg JOIN pg_proc p ON p.oid = tg.tgfoid
+		WHERE tg.tgrelid = $1::regclass AND tg.tgname = $1 || '_guard_update'`, table).
+		Scan(&g.oid, &g.tgtype, &g.enabled, &g.function, &rawArgs, &def)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return g, false
 	}
@@ -622,6 +659,12 @@ func readGuardTrigger(t *testing.T, owner *pgxpool.Pool, table string) (guardTri
 		t.Fatal(err)
 	}
 	g.args = strings.Split(strings.TrimSuffix(rawArgs, `\000`), `\000`)
+	if m := layoutArg.FindStringSubmatch(def); m != nil {
+		// The literal as deparsed, read back by the server as text[].
+		if err := owner.QueryRow(roleCtx, "SELECT "+m[1]+"::text[]").Scan(&g.layout); err != nil {
+			t.Fatalf("layout literal %s: %v", m[1], err)
+		}
+	}
 	rows, err := owner.Query(roleCtx, `SELECT a.attname::text FROM pg_depend d
 		JOIN pg_attribute a ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid
 		WHERE d.classid = 'pg_trigger'::regclass AND d.objid = $1
@@ -636,15 +679,39 @@ func readGuardTrigger(t *testing.T, owner *pgxpool.Pool, table string) (guardTri
 	return g, true
 }
 
+// decidedColumns: every column whose mutability the tests have decided —
+// the columns guardColumns gives cases to.
+func decidedColumns() map[string][]string {
+	m := map[string][]string{}
+	for _, table := range guardedTables {
+		for _, c := range guardColumns[table] {
+			m[table] = append(m[table], c.col)
+		}
+	}
+	return m
+}
+
 // updateGuardProblems: each claim table has its guard, a row-level BEFORE
-// UPDATE trigger, enabled, calling guard_update with the allow-list; every
-// column is either on the allow-list or compared by the guard's WHEN
-// clause; and the clause's column list is the table's current one (the
-// fast path is in force). It returns what is wrong.
-func updateGuardProblems(t *testing.T, owner *pgxpool.Pool, allowLists map[string][]string) []string {
+// UPDATE trigger in the state guardTriggerEnabled, calling guard_update
+// with the allow-list; every column of the table is decided (in decided)
+// and either on the allow-list or compared by the guard's WHEN clause; the
+// clause's column list is the table's current one (the fast path is in
+// force); and the event trigger that re-installs the guards is enabled. It
+// returns what is wrong.
+func updateGuardProblems(t *testing.T, owner *pgxpool.Pool, allowLists, decided map[string][]string) []string {
 	t.Helper()
 	var problems []string
 	errorf := func(format string, args ...any) { problems = append(problems, fmt.Sprintf(format, args...)) }
+	var evt string
+	err := owner.QueryRow(roleCtx, `SELECT e.evtenabled::text || ' ' || e.evtevent || ' ' || array_to_string(e.evttags, ',') || ' ' || p.oid::regprocedure::text
+		FROM pg_event_trigger e JOIN pg_proc p ON p.oid = e.evtfoid WHERE e.evtname = 'geoint_update_guard_reinstall'`).Scan(&evt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		errorf("event trigger geoint_update_guard_reinstall is missing")
+	} else if err != nil {
+		t.Fatal(err)
+	} else if evt != "O ddl_command_end ALTER TABLE geoint_guard.reinstall_update_guards()" {
+		errorf("event trigger geoint_update_guard_reinstall: %s", evt)
+	}
 	for _, table := range guardedTables {
 		g, ok := readGuardTrigger(t, owner, table)
 		if !ok {
@@ -655,76 +722,88 @@ func updateGuardProblems(t *testing.T, owner *pgxpool.Pool, allowLists map[strin
 		if g.tgtype&(row|before|update) != row|before|update || g.tgtype&(insert|del|truncate) != 0 {
 			errorf("%s_guard_update: tgtype %d, want a row-level BEFORE UPDATE trigger", table, g.tgtype)
 		}
-		if g.enabled != "O" && g.enabled != "A" {
-			errorf("%s_guard_update is not enabled (tgenabled %q)", table, g.enabled)
+		if g.enabled != guardTriggerEnabled {
+			errorf("%s_guard_update: tgenabled %q, want %q", table, g.enabled, guardTriggerEnabled)
 		}
 		if g.function != "guard_update" || !slices.Equal(g.args, allowLists[table]) {
 			errorf("%s_guard_update calls %s(%v), want guard_update(%v)", table, g.function, g.args, allowLists[table])
 		}
 		cols := tableColumns(t, owner, table)
 		for _, c := range cols {
+			if !slices.Contains(decided[table], c) {
+				errorf("column %s.%s is not decided: it is immutable until a migration puts it on the update guard's "+
+					"allow-list (SELECT install_update_guard('%s', ARRAY[…]), see 0023_cheap_update_guards.sql); "+
+					"decide, then list it in guardColumns (and updateGuardAllow if it may change)", table, c, table)
+			}
 			if !slices.Contains(allowLists[table], c) && !slices.Contains(g.deps, c) {
-				errorf("column %s.%s is neither on the update guard's allow-list nor compared by its WHEN clause: "+
-					"decide whether it may change and re-install the guard in a migration "+
-					"(SELECT install_update_guard('%s', ARRAY[…allow-list…]), see 0023_cheap_update_guards.sql), "+
-					"then update updateGuardAllow and guardColumns", table, c, table)
+				errorf("column %s.%s is neither on the update guard's allow-list nor compared by its WHEN clause", table, c)
 			}
 		}
-		layout := fmt.Sprintf("update_guard_columns_changed('%s'::regclass, '{%s}'::text[])", table, strings.Join(cols, ","))
-		if !strings.Contains(g.def, layout) {
-			errorf("%s_guard_update was installed for other columns than the table's (every update takes the slow path): %s",
-				table, g.def)
+		if !slices.Equal(g.layout, cols) {
+			errorf("%s_guard_update was installed for the columns %v, the table has %v (every update takes the slow path)",
+				table, g.layout, cols)
 		}
 	}
 	return problems
 }
 
-// TestUpdateGuardCatalogue: default-deny is kept for columns added later.
-// A column added without deciding its mutability fails the catalogue check
-// (and is refused at run time, TestUpdateGuardCharacterisationWithAnUnguardedColumn);
-// re-installing the guard decides it.
+// TestUpdateGuardCatalogue: the guards are installed as described, and
+// default-deny is kept for columns added later: a new column is compared by
+// the guard from the ALTER on (the event trigger re-installs it), and this
+// check fails until the column is decided.
 func TestUpdateGuardCatalogue(t *testing.T) {
 	env := newRoleEnv(t)
-	for _, p := range updateGuardProblems(t, env.owner, updateGuardAllow) {
+	for _, p := range updateGuardProblems(t, env.owner, updateGuardAllow, decidedColumns()) {
 		t.Error(p)
+	}
+	var workerExec, apiExec, workerInstall bool
+	if err := env.owner.QueryRow(roleCtx, `SELECT
+			has_function_privilege('geoint_worker', 'update_guard_columns_changed(regclass, text[])', 'EXECUTE'),
+			has_function_privilege('geoint_api', 'update_guard_columns_changed(regclass, text[])', 'EXECUTE'),
+			has_function_privilege('geoint_worker', 'install_update_guard(regclass, text[])', 'EXECUTE')`).
+		Scan(&workerExec, &apiExec, &workerInstall); err != nil {
+		t.Fatal(err)
+	}
+	if !workerExec || !apiExec || workerInstall {
+		t.Errorf("EXECUTE: worker/api on update_guard_columns_changed %v/%v (want true), worker on install_update_guard %v (want false)",
+			workerExec, apiExec, workerInstall)
 	}
 
 	for _, table := range guardedTables {
-		if _, err := env.owner.Exec(roleCtx, "ALTER TABLE "+table+" ADD COLUMN extra text"); err != nil {
-			t.Fatal(err)
+		addColumn(t, env.owner, table, "extra text", false)
+	}
+	failures := updateGuardProblems(t, env.owner, updateGuardAllow, decidedColumns())
+	for _, table := range guardedTables {
+		want := "column " + table + ".extra is not decided"
+		if !slices.ContainsFunc(failures, func(s string) bool { return strings.HasPrefix(s, want) }) {
+			t.Errorf("an undecided %s.extra passes the catalogue check: %v", table, failures)
 		}
 	}
-	failures := updateGuardProblems(t, env.owner, updateGuardAllow)
-	for _, table := range guardedTables {
-		want := "column " + table + ".extra is neither on the update guard's allow-list"
-		if !slices.ContainsFunc(failures, func(s string) bool { return strings.HasPrefix(s, want) }) {
-			t.Errorf("an unguarded %s.extra passes the catalogue check: %v", table, failures)
+	for _, p := range failures {
+		if !strings.Contains(p, ".extra is not decided") {
+			t.Errorf("after ADD COLUMN, the event trigger left the guard stale: %s", p)
 		}
 	}
 
 	// Deciding: extra immutable on relationship, allowed on company_version.
 	f := newGuardFixture(t, env.owner)
-	if _, err := env.owner.Exec(roleCtx, `SELECT install_update_guard('relationship', ARRAY['src_entity_id', 'dst_entity_id',
-		'last_seen_collection_id', 'closed_collection_id', 'valid_to_after', 'valid_to_before'])`); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := env.owner.Exec(roleCtx, `SELECT install_update_guard('company_version',
 		ARRAY['last_seen_collection_id', 'closed_collection_id', 'extra'])`); err != nil {
 		t.Fatal(err)
 	}
-	decided := map[string][]string{
-		"relationship":    updateGuardAllow["relationship"],
-		"person_record":   updateGuardAllow["person_record"],
-		"company_version": append(slices.Clone(updateGuardAllow["company_version"]), "extra"),
-	}
-	for _, p := range updateGuardProblems(t, env.owner, decided) {
-		if !strings.HasPrefix(p, "column person_record.extra ") && !strings.HasPrefix(p, "person_record_guard_update was installed") {
-			t.Errorf("after re-installing the guards of relationship and company_version: %s", p)
+	decided := decidedColumns()
+	decided["relationship"] = append(decided["relationship"], "extra")
+	decided["company_version"] = append(decided["company_version"], "extra")
+	allow := maps.Clone(updateGuardAllow)
+	allow["company_version"] = append(slices.Clone(updateGuardAllow["company_version"]), "extra")
+	for _, p := range updateGuardProblems(t, env.owner, allow, decided) {
+		if !strings.HasPrefix(p, "column person_record.extra is not decided") {
+			t.Errorf("after deciding relationship.extra and company_version.extra: %s", p)
 		}
 	}
 	rel, cv := f.rows["relationship"][1].id, f.rows["company_version"][1].id
 	if got := classify(t, env.owner, "relationship", fmt.Sprintf("UPDATE relationship SET extra = 'x' WHERE id = %d", rel)); got != outImmutable {
-		t.Errorf("relationship.extra after re-install: %s, want %s", got, outImmutable)
+		t.Errorf("relationship.extra: %s, want %s", got, outImmutable)
 	}
 	if got := classify(t, env.owner, "company_version", fmt.Sprintf("UPDATE company_version SET extra = 'x' WHERE id = %d", cv)); got != outOK {
 		t.Errorf("company_version.extra allow-listed: %s, want %s", got, outOK)
@@ -732,9 +811,286 @@ func TestUpdateGuardCatalogue(t *testing.T) {
 	if got := classify(t, env.owner, "company_version", fmt.Sprintf("UPDATE company_version SET name = 'x' WHERE id = %d", cv)); got != outImmutable {
 		t.Errorf("company_version.name after re-install: %s, want %s", got, outImmutable)
 	}
+	// A later ALTER keeps the decided allow-list.
+	addColumn(t, env.owner, "company_version", "extra2 text", false)
+	if g, _ := readGuardTrigger(t, env.owner, "company_version"); !slices.Equal(g.args, allow["company_version"]) {
+		t.Errorf("after another ALTER, company_version_guard_update allows %v, want %v", g.args, allow["company_version"])
+	}
 	// Only the owner may install a guard.
 	for _, p := range []*pgxpool.Pool{env.worker, env.api} {
 		denied(t, p, `SELECT install_update_guard('relationship', ARRAY['src_entity_id'])`)
+	}
+}
+
+// TestUpdateGuardNewColumnUnderAnOlderSnapshot: a REPEATABLE READ
+// transaction whose snapshot was taken before the column was added cannot
+// write it either (review of task 4, I1).
+func TestUpdateGuardNewColumnUnderAnOlderSnapshot(t *testing.T) {
+	env := newRoleEnv(t)
+	f := newGuardFixture(t, env.owner)
+	for _, table := range guardedTables {
+		id := f.rows[table][0].id
+		for _, iso := range []pgx.TxIsoLevel{pgx.RepeatableRead, pgx.Serializable} {
+			tx, err := env.worker.BeginTx(roleCtx, pgx.TxOptions{IsoLevel: iso})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := tx.Exec(roleCtx, `SELECT 1`); err != nil { // the snapshot; relationship untouched
+				t.Fatal(err)
+			}
+			col := "note_" + strings.ReplaceAll(string(iso), " ", "_")
+			if _, err := env.owner.Exec(roleCtx, "ALTER TABLE "+table+" ADD COLUMN "+strings.ToLower(col)+" text"); err != nil {
+				t.Fatal(err)
+			}
+			_, err = tx.Exec(roleCtx, fmt.Sprintf("UPDATE %s SET %s = 'x' WHERE id = %d", table, strings.ToLower(col), id))
+			if got := outcomeOf(table, err); got != outImmutable {
+				t.Errorf("%s, %s snapshot older than ADD COLUMN %s: %s, want %s", table, iso, col, got, outImmutable)
+			}
+			_ = tx.Rollback(roleCtx)
+		}
+	}
+}
+
+// TestInstallUpdateGuardKeepsEnabledState: re-installing a guard (directly
+// or through the event trigger) keeps ENABLE ALWAYS / REPLICA / DISABLE.
+func TestInstallUpdateGuardKeepsEnabledState(t *testing.T) {
+	env := newRoleEnv(t)
+	state := func() string {
+		var s string
+		if err := env.owner.QueryRow(roleCtx, `SELECT tgenabled::text FROM pg_trigger
+			WHERE tgrelid = 'relationship'::regclass AND tgname = 'relationship_guard_update'`).Scan(&s); err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	install := `SELECT install_update_guard('relationship', ARRAY['src_entity_id', 'dst_entity_id',
+		'last_seen_collection_id', 'closed_collection_id', 'valid_to_after', 'valid_to_before'])`
+	for i, tc := range []struct{ alter, want string }{
+		{"ENABLE ALWAYS", "A"}, {"ENABLE REPLICA", "R"}, {"DISABLE", "D"}, {"ENABLE", "O"},
+	} {
+		if _, err := env.owner.Exec(roleCtx, "ALTER TABLE relationship "+tc.alter+" TRIGGER relationship_guard_update"); err != nil {
+			t.Fatal(err)
+		}
+		if got := state(); got != tc.want {
+			t.Errorf("after %s (and the event trigger's re-install): %s, want %s", tc.alter, got, tc.want)
+		}
+		if _, err := env.owner.Exec(roleCtx, install); err != nil {
+			t.Fatal(err)
+		}
+		if got := state(); got != tc.want {
+			t.Errorf("%s then install_update_guard: %s, want %s", tc.alter, got, tc.want)
+		}
+		addColumn(t, env.owner, "relationship", fmt.Sprintf("c%d text", i), false)
+		if got := state(); got != tc.want {
+			t.Errorf("%s then ADD COLUMN: %s, want %s", tc.alter, got, tc.want)
+		}
+	}
+}
+
+// TestDropColumnCascadeKeepsTheGuard: DROP COLUMN … CASCADE of a column the
+// guard compares would drop the guard with it; the event trigger refuses.
+func TestDropColumnCascadeKeepsTheGuard(t *testing.T) {
+	env := newRoleEnv(t)
+	for _, table := range guardedTables {
+		_, err := env.owner.Exec(roleCtx, "ALTER TABLE "+table+" DROP COLUMN record_ref CASCADE")
+		if err == nil || !strings.Contains(err.Error(), "without its update guard") {
+			t.Errorf("%s: DROP COLUMN record_ref CASCADE: %v", table, err)
+		}
+		if _, ok := readGuardTrigger(t, env.owner, table); !ok {
+			t.Errorf("%s lost its guard", table)
+		}
+	}
+	// A plain DROP COLUMN of a compared column is refused by the dependency.
+	if _, err := env.owner.Exec(roleCtx, "ALTER TABLE relationship DROP COLUMN record_ref"); err == nil {
+		t.Error("DROP COLUMN record_ref succeeded")
+	}
+	// The documented way to drop a column, in one transaction (a migration).
+	addColumn(t, env.owner, "company_version", "extra text", false)
+	tx, err := env.owner.Begin(roleCtx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(roleCtx) }()
+	for _, sql := range []string{
+		`SET LOCAL geoint.update_guard_installing = 'on'`,
+		`ALTER TABLE company_version DROP COLUMN extra CASCADE`,
+		`SELECT install_update_guard('company_version', ARRAY['last_seen_collection_id', 'closed_collection_id'])`,
+	} {
+		if _, err := tx.Exec(roleCtx, sql); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+	}
+	if err := tx.Commit(roleCtx); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range updateGuardProblems(t, env.owner, updateGuardAllow, decidedColumns()) {
+		t.Errorf("after dropping company_version.extra: %s", p)
+	}
+}
+
+// TestTriggerFunctionsPinSearchPath: every trigger function, event trigger
+// function and SECURITY DEFINER function of the schema (and of
+// geoint_guard) runs with search_path = pg_catalog, pg_temp, so no name it
+// uses can resolve to an object the worker created in the schema.
+func TestTriggerFunctionsPinSearchPath(t *testing.T) {
+	env := newRoleEnv(t)
+	rows, err := env.owner.Query(roleCtx, `SELECT p.oid::regprocedure::text, coalesce(array_to_string(p.proconfig, ' '), '')
+		FROM pg_proc p
+		WHERE p.pronamespace IN (current_schema()::regnamespace, 'geoint_guard'::regnamespace)
+			AND (p.prorettype IN ('trigger'::regtype, 'event_trigger'::regtype) OR p.prosecdef
+				OR p.proname IN ('update_guard_columns_changed', 'install_update_guard'))
+		ORDER BY 1`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	type fn struct{ name, config string }
+	fns, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (fn, error) {
+		var f fn
+		return f, r.Scan(&f.name, &f.config)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fns) < 9 {
+		t.Fatalf("only %d functions found: %v", len(fns), fns)
+	}
+	for _, f := range fns {
+		if !slices.Contains(strings.Fields(f.config), "search_path=pg_catalog, pg_temp") &&
+			!strings.Contains(f.config, "search_path=pg_catalog, pg_temp") {
+			t.Errorf("%s runs with the caller's search_path (proconfig %q): add SET search_path = pg_catalog, pg_temp", f.name, f.config)
+		}
+	}
+}
+
+// TestWorkerCannotShadowGuardFunctions: the worker, which may CREATE in the
+// schema, defines exact-type functions that would make the guards compare
+// nothing; the guards still refuse (review of task 4, P1). Without the
+// pinned search_path the same functions switch the guard off, which the
+// test shows first.
+func TestWorkerCannotShadowGuardFunctions(t *testing.T) {
+	env := newRoleEnv(t)
+	f := newGuardFixture(t, env.owner)
+	for _, sql := range []string{
+		`CREATE FUNCTION to_jsonb(relationship) RETURNS jsonb LANGUAGE sql AS $$SELECT '{}'::jsonb$$`,
+		`CREATE FUNCTION to_jsonb(entity) RETURNS jsonb LANGUAGE sql AS $$SELECT '{}'::jsonb$$`,
+		`CREATE FUNCTION to_jsonb(company_version) RETURNS jsonb LANGUAGE sql AS $$SELECT '{}'::jsonb$$`,
+		`CREATE FUNCTION arr_eq_true(text[], text[]) RETURNS boolean LANGUAGE sql IMMUTABLE AS 'SELECT true'`,
+		`CREATE OPERATOR = (LEFTARG = text[], RIGHTARG = text[], FUNCTION = arr_eq_true)`,
+	} {
+		allowed(t, env.worker, sql)
+	}
+	rel := f.rows["relationship"][1].id
+	forge := fmt.Sprintf("UPDATE relationship SET record_ref = 'forged' WHERE id = %d", rel)
+
+	// The attack works on an unpinned guard_update (owner, rolled back).
+	tx, err := env.owner.Begin(roleCtx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, sql := range []string{`ALTER FUNCTION guard_update() RESET search_path`, forge} {
+		if _, err := tx.Exec(roleCtx, sql); err != nil {
+			t.Errorf("unpinned: %s: %v (the attack should succeed, or the test proves nothing)", sql, err)
+		}
+	}
+	_ = tx.Rollback(roleCtx)
+
+	// Fresh sessions (plpgsql resolves names per session), every role.
+	for _, p := range []*pgxpool.Pool{env.owner, env.worker} {
+		p.Reset()
+		if got := classify(t, p, "relationship", forge); got != outImmutable {
+			t.Errorf("forged record_ref: %s, want %s", got, outImmutable)
+		}
+		_, err := p.Exec(roleCtx, `UPDATE entity SET name = 'forged' WHERE id = (SELECT min(id) FROM entity)`)
+		if err == nil || !strings.Contains(err.Error(), "entity columns are immutable") {
+			t.Errorf("forged entity name: %v", err)
+		}
+	}
+	// The fallback (d) with an undecided column, under the worker's operator.
+	addColumn(t, env.owner, "company_version", "extra text", true)
+	env.worker.Reset()
+	cv := f.rows["company_version"][1].id
+	if got := classify(t, env.worker, "company_version", fmt.Sprintf("UPDATE company_version SET extra = 'x' WHERE id = %d", cv)); got != outImmutable {
+		t.Errorf("undecided column under a shadowed text[] =: %s, want %s", got, outImmutable)
+	}
+}
+
+// TestUpdateGuardEqualValuesWrittenDifferently: values equal under each
+// type's equality but written differently (key order, numeric scale, the
+// same instant, -0) and the loaders' statement shapes give the same outcome
+// with the installed guard and with the original one.
+func TestUpdateGuardEqualValuesWrittenDifferently(t *testing.T) {
+	env := newRoleEnv(t)
+	f := newGuardFixture(t, env.owner)
+	var rel, cv int64
+	if err := env.owner.QueryRow(roleCtx, `INSERT INTO relationship (rel_type, src_entity_id, dst_entity_id, attrs, kind,
+			confidence, first_collection_id, record_ref, last_seen_collection_id)
+		SELECT 'shareholder_of', e.id, e.id, '{"role": "a", "zz": 1}', 'inference', 0, $1, 'eq', $1
+		FROM entity e WHERE e.kind = 'company' ORDER BY e.id LIMIT 1 RETURNING id`, f.coll[1]).Scan(&rel); err != nil {
+		t.Fatal(err)
+	}
+	cv = f.rows["company_version"][1].id // capital 10.00
+	stmts := map[string][]string{
+		"relationship": {
+			`UPDATE relationship SET attrs = '{"zz": 1, "role": "a"}' WHERE id = {rel}`,
+			`UPDATE relationship SET attrs = '{"zz":1.0,"role":"a"}' WHERE id = {rel}`,
+			`UPDATE relationship SET confidence = '-0' WHERE id = {rel}`,
+			`UPDATE relationship SET confidence = 0.0 WHERE id = {rel}`,
+			`UPDATE relationship SET recorded_at = (recorded_at AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' WHERE id = {rel}`,
+			`UPDATE relationship SET recorded_at = (recorded_at AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo' WHERE id = {rel}`,
+			`UPDATE relationship SET valid_from = '2001-01-01'::timestamp::date WHERE id = {rel}`,
+			`UPDATE relationship r SET last_seen_collection_id = v.c FROM (VALUES ({rel}, {c3})) v(id, c) WHERE r.id = v.id`,
+			`UPDATE relationship r SET last_seen_collection_id = v.c, record_ref = r.record_ref || 'x' FROM (VALUES ({rel}, {c3})) v(id, c) WHERE r.id = v.id`,
+			`UPDATE relationship r SET last_seen_collection_id = v.c FROM (VALUES ({rel}, {c1})) v(id, c) WHERE r.id = v.id`,
+		},
+		"company_version": {
+			`UPDATE company_version SET capital = 10.0 WHERE id = {cv}`,
+			`UPDATE company_version SET capital = 10.004 WHERE id = {cv}`,
+			`UPDATE company_version SET capital = '1e1' WHERE id = {cv}`,
+			`UPDATE company_version SET capital = 10.01 WHERE id = {cv}`,
+			`UPDATE company_version SET name = 'EMPRESA'::varchar WHERE id = {cv}`,
+			`INSERT INTO company_version (id, entity_id, name, first_collection_id, record_ref) SELECT id, entity_id, name,
+				first_collection_id, record_ref FROM company_version WHERE id = {cv}
+				ON CONFLICT (id) DO UPDATE SET last_seen_collection_id = {c3}`,
+			`INSERT INTO company_version (id, entity_id, name, first_collection_id, record_ref) SELECT id, entity_id, 'OTHER',
+				first_collection_id, record_ref FROM company_version WHERE id = {cv}
+				ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name`,
+			`INSERT INTO company_version (id, entity_id, name, first_collection_id, record_ref) SELECT id, entity_id, name,
+				first_collection_id, record_ref FROM company_version WHERE id = {cv}
+				ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, last_seen_collection_id = {c1}`,
+		},
+	}
+	repl := strings.NewReplacer("{rel}", fmt.Sprint(rel), "{cv}", fmt.Sprint(cv),
+		"{c1}", fmt.Sprint(f.coll[1]), "{c3}", fmt.Sprint(f.coll[3]))
+	for table, list := range stmts {
+		run := func(original bool) []string {
+			tx, err := env.owner.Begin(roleCtx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = tx.Rollback(roleCtx) }()
+			if original {
+				if _, err := tx.Exec(roleCtx, originalGuard(table)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var out []string
+			for _, sql := range list {
+				sp, err := tx.Begin(roleCtx)
+				if err != nil {
+					t.Fatal(err)
+				}
+				out = append(out, outcomeOf(table, execErr(sp, repl.Replace(sql))))
+				_ = sp.Rollback(roleCtx)
+			}
+			return out
+		}
+		installed, original := run(false), run(true)
+		for i, sql := range list {
+			if installed[i] != original[i] {
+				t.Errorf("%s\n  installed guard: %s, original guard: %s", repl.Replace(sql), installed[i], original[i])
+			}
+		}
+		t.Logf("%s: %v", table, installed)
 	}
 }
 
@@ -776,7 +1132,8 @@ func TestUpdateGuardFastPath(t *testing.T) {
 	env := newRoleEnv(t)
 	f := newGuardFixture(t, env.owner)
 	c3 := f.coll[3]
-	for _, tc := range []struct {
+	visited := map[string]bool{}
+	for i, tc := range []struct {
 		table, set string
 		rows       int64
 	}{
@@ -786,17 +1143,22 @@ func TestUpdateGuardFastPath(t *testing.T) {
 		{"company_version", fmt.Sprintf("last_seen_collection_id = %d", c3), 3},
 	} {
 		sql := fmt.Sprintf("UPDATE %s SET %s", tc.table, tc.set)
+		if !visited[tc.table] { // as migrated; a later visit follows the fallback below
+			visited[tc.table] = true
+			if guard, layout := guardCalls(t, env.owner, sql); guard != 0 || layout != 1 {
+				t.Errorf("%s: guard_update called %d times, column check %d times; want 0 and 1", sql, guard, layout)
+			}
+		}
+		// A column added through the event trigger (it also heals the
+		// fallback of an earlier row): the fast path.
+		addColumn(t, env.owner, tc.table, fmt.Sprintf("extra_%d text", i), false)
 		if guard, layout := guardCalls(t, env.owner, sql); guard != 0 || layout != 1 {
-			t.Errorf("%s: guard_update called %d times, column check %d times; want 0 and 1", sql, guard, layout)
+			t.Errorf("%s after ADD COLUMN: guard_update called %d times, column check %d times; want 0 and 1", sql, guard, layout)
 		}
-		if _, err := env.owner.Exec(roleCtx, "ALTER TABLE "+tc.table+" ADD COLUMN IF NOT EXISTS extra text"); err != nil {
-			t.Fatal(err)
-		}
+		// A column added with the event trigger skipped: the fallback (d).
+		addColumn(t, env.owner, tc.table, fmt.Sprintf("fallback_%d text", i), true)
 		if guard, _ := guardCalls(t, env.owner, sql); guard != tc.rows {
 			t.Errorf("%s with an unguarded column: guard_update called %d times, want %d (once per row)", sql, guard, tc.rows)
-		}
-		if _, err := env.owner.Exec(roleCtx, "ALTER TABLE "+tc.table+" DROP COLUMN extra"); err != nil {
-			t.Fatal(err)
 		}
 	}
 }
