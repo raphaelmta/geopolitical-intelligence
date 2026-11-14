@@ -121,4 +121,17 @@ changed (ranked table 44 s, token tables 25 s, indexes 10 s).
 
 ## 3. Hypotheses
 
-*Pending: filled in as the runs complete (see the report's run table).*
+*In progress: runs still to come are marked pending.* Controls: `roomy`
+baseline 770 s first load / 442 s re-load; `pressure` same-day control 1602 s /
+723 s.
+
+| # | hypothesis | verdict | measured (sample) |
+|---|---|---|---|
+| H1 | resolve identities before the relationships are written | **confirmed** | Resolve 727 s -> 96 s (x7.6) under pressure with the unchanged resolver, run before the relationship phase; same decisions, proposals and merged groups |
+| H2 | set-based batch machinery of Resolve | killed as a lever of its own | the per-batch statements are 16 s of 96 s (roomy) and 68 s of 798 s (pressure) |
+| H3 | relationship insert: FK checks, index locality, chunk order | **confirmed (two causes)** | range-ordered chunks: phase 469 s -> 287 s under pressure, flat; FK checks are 86 % of the insert's CPU (242 s -> 33.5 s without them, roomy) |
+| H4 | company_version / person_record insert | **confirmed: FK checks** | 177 s -> 13.9 s (x12.7) and 86 s -> 18.5 s (x4.6) without FK checks (roomy); parallelism pending |
+| H5 | btrfs copy-on-write + zstd under pgdata | confirmed, moderate | No_COW: first load -5 % (busy host) to -14 % (quiet host), re-load -6 %; only the IO-bound phases move |
+| H6 | PostgreSQL settings during the load | pending (WAL waits are 2 % of samples) | |
+| H7 | incremental / cheaper search rebuild | incremental killed; skip + reuse confirmed | change detection 4 s; rebuild reusing name_norm and tokens about 22-25 s instead of 87 s |
+| H8 | monthly re-load rewrites every row | **confirmed** | seen updates = 55-58 % of the re-load; guard 16-18 us per row -> 3.5-5 us with WHEN-clause triggers; ordered chunks: relationship phase 379 s -> 202 s; no-rewrite design pending |
