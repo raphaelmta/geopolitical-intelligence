@@ -105,10 +105,12 @@ fail() {
 	exit 1
 }
 
-# set_list "a=b;c=d" PREFIX: prints "PREFIX a = 'b';" for every item.
+# set_list "a=b;c=d" PREFIX: prints "PREFIX a = 'b';" for every item. The
+# list is ended with a newline: without it `read` fails on the last item and
+# the loop silently drops it (a single setting would never be applied).
 set_list() {
-	printf '%s' "$1" | tr ';' '\n' | while IFS='=' read -r k v; do
-		[ -n "$k" ] && printf "%s %s = '%s';\n" "$2" "$k" "$v"
+	printf '%s\n' "$1" | tr ';' '\n' | while IFS='=' read -r k v; do
+		if [ -n "$k" ]; then printf "%s %s = '%s';\n" "$2" "$k" "$v"; fi
 	done
 }
 
