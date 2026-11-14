@@ -3,9 +3,10 @@
 # keep the final state must pass without rewriting it. Rewrite (-update or
 # UPDATE_GOLDEN=1) only for an intended difference, reviewed in this diff.
 # second collection interrupted before its candidacy records commit, then repeated
-# sha256 ce97590aef05f2f8d6f0c0eb31ab3316dff929e9c750e3f29483db8b99fe3017
+# sha256 722bb1721e49c6887b9d5c1b53ddbb9a3bfc89e5e3f78f0d7f1dd464388192f1
 # collection                        3 lines  sha256 9b2bc7c65f2c628bc4e26f694fd798e931fc6733627d870edc98304a15c73186
 # collection_file                  24 lines  sha256 26121b722374f5cb66e337b3f2f6c30634010b6bcfc325c9b58fe0316f2a2579
+# collection_file_url              24 lines  sha256 2e916b95616ddfd6b060639f63ee2a1e61fd7d398d07cc341d0670979a0d8177
 # company_version                   0 lines  sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 # entity                           21 lines  sha256 04ca8e50eb4a7f8d4cedcbc5f55c15d57f24b8864ea7c8f099eab29736700a1e
 # identity_ambiguous_key            0 lines  sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
@@ -15,6 +16,10 @@
 # person_entity_without_records     8 lines  sha256 545e7e1665e7735b71eba8adf3d8f729ccb0d1366dfafd32809dc662188effa5
 # person_record                    20 lines  sha256 6342f346bb7df49aca7b7f85bc01d2730902089a1a77ea9e03fac25e9936b196
 # relationship                     26 lines  sha256 a4c05466469f450b6e34f2aa4cd6212f43ad757993b01fc361770d7d4f863aa5
+# search_company                    2 lines  sha256 06b436f71feb48d671dfad1b60d7833385cc7c84d33f3fcecaea7f831c397e89
+# search_frequent_token             0 lines  sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+# search_other                      6 lines  sha256 6c42d6ece426f7e6ad91f1dc0944c12f27b0ef3d94dc284564158f6f63570a78
+# search_person                    13 lines  sha256 5ce3d3c8fdd5a7da335e21d063c472e37a13f255b74006e3ce548d7b46b50ba3
 == collection ==
 tse@2043-01-10#1	done	{"full": true}
 tse@2043-01-11#1	failed	{"full": true}
@@ -44,6 +49,31 @@ tse@2043-01-11#2	receitas_candidatos_2022_AC.csv	raw/tse/2043-01-11/prestacao_de
 tse@2043-01-11#2	receitas_candidatos_2022_BR.csv	raw/tse/2043-01-11/prestacao_de_contas_eleitorais_candidatos_2022.zip
 tse@2043-01-11#2	receitas_candidatos_2024_AC.csv	raw/tse/2043-01-11/prestacao_de_contas_eleitorais_candidatos_2024.zip
 tse@2043-01-11#2	receitas_candidatos_2026_AC.csv	raw/tse/2043-01-11/prestacao_de_contas_eleitorais_candidatos_2026.zip
+== collection_file_url ==
+tse@2043-01-10#1	consulta_cand_2022_AC.csv	http://127.0.0.1:1/unused/consulta_cand/consulta_cand_2022.zip
+tse@2043-01-10#1	consulta_cand_2022_BR.csv	http://127.0.0.1:1/unused/consulta_cand/consulta_cand_2022.zip
+tse@2043-01-10#1	consulta_cand_2024_AC.csv	http://127.0.0.1:1/unused/consulta_cand/consulta_cand_2024.zip
+tse@2043-01-10#1	consulta_cand_2026_AC.csv	http://127.0.0.1:1/unused/consulta_cand/consulta_cand_2026.zip
+tse@2043-01-10#1	receitas_candidatos_2022_AC.csv	http://127.0.0.1:1/unused/prestacao_contas/prestacao_de_contas_eleitorais_candidatos_2022.zip
+tse@2043-01-10#1	receitas_candidatos_2022_BR.csv	http://127.0.0.1:1/unused/prestacao_contas/prestacao_de_contas_eleitorais_candidatos_2022.zip
+tse@2043-01-10#1	receitas_candidatos_2024_AC.csv	http://127.0.0.1:1/unused/prestacao_contas/prestacao_de_contas_eleitorais_candidatos_2024.zip
+tse@2043-01-10#1	receitas_candidatos_2026_AC.csv	http://127.0.0.1:1/unused/prestacao_contas/prestacao_de_contas_eleitorais_candidatos_2026.zip
+tse@2043-01-11#1	consulta_cand_2022_AC.csv	http://127.0.0.1:1/unused/consulta_cand/consulta_cand_2022.zip
+tse@2043-01-11#1	consulta_cand_2022_BR.csv	http://127.0.0.1:1/unused/consulta_cand/consulta_cand_2022.zip
+tse@2043-01-11#1	consulta_cand_2024_AC.csv	http://127.0.0.1:1/unused/consulta_cand/consulta_cand_2024.zip
+tse@2043-01-11#1	consulta_cand_2026_AC.csv	http://127.0.0.1:1/unused/consulta_cand/consulta_cand_2026.zip
+tse@2043-01-11#1	receitas_candidatos_2022_AC.csv	http://127.0.0.1:1/unused/prestacao_contas/prestacao_de_contas_eleitorais_candidatos_2022.zip
+tse@2043-01-11#1	receitas_candidatos_2022_BR.csv	http://127.0.0.1:1/unused/prestacao_contas/prestacao_de_contas_eleitorais_candidatos_2022.zip
+tse@2043-01-11#1	receitas_candidatos_2024_AC.csv	http://127.0.0.1:1/unused/prestacao_contas/prestacao_de_contas_eleitorais_candidatos_2024.zip
+tse@2043-01-11#1	receitas_candidatos_2026_AC.csv	http://127.0.0.1:1/unused/prestacao_contas/prestacao_de_contas_eleitorais_candidatos_2026.zip
+tse@2043-01-11#2	consulta_cand_2022_AC.csv	http://127.0.0.1:1/unused/consulta_cand/consulta_cand_2022.zip
+tse@2043-01-11#2	consulta_cand_2022_BR.csv	http://127.0.0.1:1/unused/consulta_cand/consulta_cand_2022.zip
+tse@2043-01-11#2	consulta_cand_2024_AC.csv	http://127.0.0.1:1/unused/consulta_cand/consulta_cand_2024.zip
+tse@2043-01-11#2	consulta_cand_2026_AC.csv	http://127.0.0.1:1/unused/consulta_cand/consulta_cand_2026.zip
+tse@2043-01-11#2	receitas_candidatos_2022_AC.csv	http://127.0.0.1:1/unused/prestacao_contas/prestacao_de_contas_eleitorais_candidatos_2022.zip
+tse@2043-01-11#2	receitas_candidatos_2022_BR.csv	http://127.0.0.1:1/unused/prestacao_contas/prestacao_de_contas_eleitorais_candidatos_2022.zip
+tse@2043-01-11#2	receitas_candidatos_2024_AC.csv	http://127.0.0.1:1/unused/prestacao_contas/prestacao_de_contas_eleitorais_candidatos_2024.zip
+tse@2043-01-11#2	receitas_candidatos_2026_AC.csv	http://127.0.0.1:1/unused/prestacao_contas/prestacao_de_contas_eleitorais_candidatos_2026.zip
 == company_version ==
 == entity ==
 company:98990001	company	98990001	ALFA PARTICIPAÇÕES S.A.	ALFA PARTICIPACOES S A
@@ -134,3 +164,28 @@ donated_to	person[tse|donor:2022:10001600002|LUCIA DOADORA EXEMPLO|666777;tse|do
 donated_to	person[tse|donor:2022:10001600002|MARCOS SEM DOCUMENTO|]	person[tse|cand:2022:10001600002|JOAO PEDRO INVENTADO|]	tse|donor:2022:10001600002|MARCOS SEM DOCUMENTO|	tse|cand:2022:10001600002|JOAO PEDRO INVENTADO|	{"date": "2022-09-13", "role": "50012", "year": 2022, "items": 1, "amount": "50.00", "origin": "Recursos de pessoas físicas", "receipt_id": "50012", "origin_code": "10010200"}	fact	~	2022-09-13	~	~	tse@2043-01-10#1	receitas_candidatos_2022_AC.csv:15	tse@2043-01-11#2	~
 donated_to	person[tse|donor:2022:10001600003|JOSE CONCEICAO BRANDAO|123456]	person[tse|cand:2022:10001600003|CARLOS EDUARDO EXEMPLO|789012]	tse|donor:2022:10001600003|JOSE CONCEICAO BRANDAO|123456	tse|cand:2022:10001600003|CARLOS EDUARDO EXEMPLO|789012	{"date": "2022-09-20", "role": "50018", "year": 2022, "items": 1, "amount": "800.00", "origin": "Recursos de pessoas físicas", "receipt_id": "50018", "origin_code": "10010200"}	fact	~	2022-09-20	~	~	tse@2043-01-10#1	receitas_candidatos_2022_AC.csv:22	tse@2043-01-11#2	~
 donated_to	person[tse|donor:2026:10002600001|TEREZA NOVA DOADORA|712345]	person[tse|cand:2022:10001600001|MARIANA FICTICIA DOS SANTOS|123456;tse|cand:2026:10002600001|MARIANA FICTICIA DOS SANTOS|123456;tse|donor:2024:10002200002|MARIANA FICTICIA DOS SANTOS|123456]	tse|donor:2026:10002600001|TEREZA NOVA DOADORA|712345	tse|cand:2026:10002600001|MARIANA FICTICIA DOS SANTOS|123456	{"date": "2026-08-20", "role": "70002", "year": 2026, "items": 1, "amount": "300.00", "origin": "Recursos de pessoas físicas", "receipt_id": "70002", "origin_code": "10010200"}	fact	~	2026-08-20	~	~	tse@2043-01-11#2	receitas_candidatos_2026_AC.csv:3	tse@2043-01-11#2	~
+== search_company ==
+tie 12+1	company:98990001	C	ALFA PARTICIPACOES S.A.	1	'alfa' 'participacoes'
+tie 14+1	company:98990077	C	EMPRESA DOADORA INVENTADA LTDA	1	'doadora' 'empresa' 'inventada'
+== search_frequent_token ==
+== search_other ==
+tie 10+1	party:PSDB	A	PARTIDO DA SOCIAL DEMOCRACIA BRASILEIRA	2	'brasileira' 'democracia' 'partido' 'social'
+tie 17+1	party:MDB	A	MOVIMENTO DEMOCRATICO BRASILEIRO	1	'brasileiro' 'democratico' 'movimento'
+tie 18+1	party:PC DO B	A	PARTIDO COMUNISTA DO BRASIL	1	'brasil' 'comunista' 'partido'
+tie 19+1	party:PSD	A	PARTIDO SOCIAL DEMOCRATICO	1	'democratico' 'partido' 'social'
+tie 20+1	party:PSOL	A	PARTIDO SOCIALISMO E LIBERDADE	1	'liberdade' 'partido' 'socialismo'
+tie 4+1	party:PT	A	PARTIDO DOS TRABALHADORES	5	'partido' 'trabalhadores'
+== search_person ==
+tie 1+1	person[tse|cand:2022:10001600001|MARIANA FICTICIA DOS SANTOS|123456;tse|cand:2026:10002600001|MARIANA FICTICIA DOS SANTOS|123456;tse|donor:2024:10002200002|MARIANA FICTICIA DOS SANTOS|123456]	P	MARIANA FICTICIA DOS SANTOS	10	'ficticia' 'mariana' 'santos'
+tie 11+1	person[tse|cand:2024:10002200002|PAULO HENRIQUE TESTE|]	P	PAULO HENRIQUE TESTE	2	'henrique' 'paulo' 'teste'
+tie 13+1	person[tse|cand:2022:10001600006|BEATRIZ EXEMPLAR SOUZA|999888]	P	BEATRIZ EXEMPLAR SOUZA	1	'beatriz' 'exemplar' 'souza'
+tie 15+1	person[tse|donor:2022:10001600003|JOSE CONCEICAO BRANDAO|123456]	P	JOSE CONCEICAO BRANDAO	1	'brandao' 'conceicao' 'jose'
+tie 16+1	person[tse|donor:2022:10001600002|MARCOS SEM DOCUMENTO|]	P	MARCOS SEM DOCUMENTO	1	'documento' 'marcos' 'sem'
+tie 2+1	person[tse|donor:2022:10001600001|ROBERTO DOADOR FICTICIO|222333;tse|donor:2022:10001600003|ROBERTO DOADOR FICTICIO|222333;tse|donor:2022:10001600010|ROBERTO DOADOR FICTICIO|222333;tse|donor:2024:10002200001|ROBERTO DOADOR FICTICIO|222333;tse|donor:2026:10002600001|ROBERTO DOADOR FICTICIO|222333]	P	ROBERTO DOADOR FICTICIO	6	'doador' 'ficticio' 'roberto'
+tie 21+1	person[tse|donor:2026:10002600001|TEREZA NOVA DOADORA|712345]	P	TEREZA NOVA DOADORA	1	'doadora' 'nova' 'tereza'
+tie 3+1	person[tse|cand:2022:10001600003|CARLOS EDUARDO EXEMPLO|789012]	P	CARLOS EDUARDO EXEMPLO	5	'carlos' 'eduardo' 'exemplo'
+tie 5+1	person[tse|cand:2022:10001600002|JOAO PEDRO INVENTADO|]	P	JOAO PEDRO INVENTADO	4	'inventado' 'joao' 'pedro'
+tie 6+1	person[tse|cand:2022:10001600004|ANA PAULA MODELO|654987]	P	ANA PAULA MODELO	2	'ana' 'modelo' 'paula'
+tie 7+1	person[tse|cand:2022:10001600010|HELENA MARIA INVENTADA|852963]	P	HELENA MARIA INVENTADA	2	'helena' 'inventada' 'maria'
+tie 8+1	person[tse|donor:2022:10001600002|LUCIA DOADORA EXEMPLO|666777;tse|donor:2026:10002600001|LUCIA DOADORA EXEMPLO|666777]	P	LUCIA DOADORA EXEMPLO	2	'doadora' 'exemplo' 'lucia'
+tie 9+1	person[tse|cand:2024:10002200001|MARIANA FICTICIA DOS SANTOS|]	P	MARIANA FICTICIA DOS SANTOS	2	'ficticia' 'mariana' 'santos'

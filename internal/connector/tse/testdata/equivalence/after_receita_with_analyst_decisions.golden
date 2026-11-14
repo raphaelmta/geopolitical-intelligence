@@ -3,9 +3,10 @@
 # keep the final state must pass without rewriting it. Rewrite (-update or
 # UPDATE_GOLDEN=1) only for an intended difference, reviewed in this diff.
 # Receita full load, TSE collection (groups across sources), analyst Merge, Split, Decide (confirm, reject), TSE second collection
-# sha256 b51d66c9a004c4e429ceee78a57f3af6c046f477305a68131e72a3b7163f6374
+# sha256 3daa26cedb9dc4449b7f58c1868de345ac06d41bc3930669e6dedb42e7308d3c
 # collection                        3 lines  sha256 10e467e288f14dfbb86e1fb7d7fb8f9fd35c34b12a51200a4b4e8861b8c5da38
 # collection_file                  19 lines  sha256 f8087c89fe72f62b41e2e8a00674faa9b3e127a5b6efb610e4843fa407d9d644
+# collection_file_url              19 lines  sha256 1539cff05c9f36018bf345143c77cb9ac8ae7add85600fd5cc3d0799fabfe239
 # company_version                  29 lines  sha256 0dea4a266b1eaaaf1c4c59da8f6cbb1baad3549acd3b4fe7144777624cc8319d
 # entity                           84 lines  sha256 8f83689ffc11eaa973d91480a70767e8fea0edbbd7e1031b56d54aa90d806c4a
 # identity_ambiguous_key            1 lines  sha256 f2880f75cbd7f575efcaf61fbc80c529eb6d9832dcfdb10e1ea00839874699fc
@@ -15,6 +16,10 @@
 # person_entity_without_records    11 lines  sha256 5cdb48389935bedd772ee0eb90e1b624e2f001715ce9c9bbe7db2ae686b15344
 # person_record                    53 lines  sha256 965fc52601816c2084010e6587d01570afd764a38b78fc8824d8dfe8c570be92
 # relationship                     94 lines  sha256 f8c7af03e336cc1e83f50f8bee49804038c26bec069da8cec5f25dd29ca8496f
+# search_company                   31 lines  sha256 07ec62e7369810b552f7c1d76a3921a5d3345ddaf5a0a154542b2a3aed0f76d1
+# search_frequent_token             0 lines  sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+# search_other                      7 lines  sha256 14c127039d9a0109bee8ae4e135530a876d320d3b4bcfe0d957a3164c6c03d02
+# search_person                    41 lines  sha256 034e4a4fd703ff3b5eeac33de3e47791773c02beaa1b54d6d2372b08c644bb4e
 == collection ==
 receita@2042-01-01#1	done	{"full": true}
 tse@2043-01-10#1	done	{"full": true}
@@ -39,6 +44,26 @@ tse@2043-01-11#1	receitas_candidatos_2022_AC.csv	raw/tse/2043-01-11/prestacao_de
 tse@2043-01-11#1	receitas_candidatos_2022_BR.csv	raw/tse/2043-01-11/prestacao_de_contas_eleitorais_candidatos_2022.zip
 tse@2043-01-11#1	receitas_candidatos_2024_AC.csv	raw/tse/2043-01-11/prestacao_de_contas_eleitorais_candidatos_2024.zip
 tse@2043-01-11#1	receitas_candidatos_2026_AC.csv	raw/tse/2043-01-11/prestacao_de_contas_eleitorais_candidatos_2026.zip
+== collection_file_url ==
+receita@2042-01-01#1	Empresas.csv	http://127.0.0.1:1/unused/2042-01/Empresas0.zip
+receita@2042-01-01#1	Estabelecimentos.csv	http://127.0.0.1:1/unused/2042-01/Estabelecimentos0.zip
+receita@2042-01-01#1	Socios.csv	http://127.0.0.1:1/unused/2042-01/Socios0.zip
+tse@2043-01-10#1	consulta_cand_2022_AC.csv	http://127.0.0.1:1/unused/consulta_cand/consulta_cand_2022.zip
+tse@2043-01-10#1	consulta_cand_2022_BR.csv	http://127.0.0.1:1/unused/consulta_cand/consulta_cand_2022.zip
+tse@2043-01-10#1	consulta_cand_2024_AC.csv	http://127.0.0.1:1/unused/consulta_cand/consulta_cand_2024.zip
+tse@2043-01-10#1	consulta_cand_2026_AC.csv	http://127.0.0.1:1/unused/consulta_cand/consulta_cand_2026.zip
+tse@2043-01-10#1	receitas_candidatos_2022_AC.csv	http://127.0.0.1:1/unused/prestacao_contas/prestacao_de_contas_eleitorais_candidatos_2022.zip
+tse@2043-01-10#1	receitas_candidatos_2022_BR.csv	http://127.0.0.1:1/unused/prestacao_contas/prestacao_de_contas_eleitorais_candidatos_2022.zip
+tse@2043-01-10#1	receitas_candidatos_2024_AC.csv	http://127.0.0.1:1/unused/prestacao_contas/prestacao_de_contas_eleitorais_candidatos_2024.zip
+tse@2043-01-10#1	receitas_candidatos_2026_AC.csv	http://127.0.0.1:1/unused/prestacao_contas/prestacao_de_contas_eleitorais_candidatos_2026.zip
+tse@2043-01-11#1	consulta_cand_2022_AC.csv	http://127.0.0.1:1/unused/consulta_cand/consulta_cand_2022.zip
+tse@2043-01-11#1	consulta_cand_2022_BR.csv	http://127.0.0.1:1/unused/consulta_cand/consulta_cand_2022.zip
+tse@2043-01-11#1	consulta_cand_2024_AC.csv	http://127.0.0.1:1/unused/consulta_cand/consulta_cand_2024.zip
+tse@2043-01-11#1	consulta_cand_2026_AC.csv	http://127.0.0.1:1/unused/consulta_cand/consulta_cand_2026.zip
+tse@2043-01-11#1	receitas_candidatos_2022_AC.csv	http://127.0.0.1:1/unused/prestacao_contas/prestacao_de_contas_eleitorais_candidatos_2022.zip
+tse@2043-01-11#1	receitas_candidatos_2022_BR.csv	http://127.0.0.1:1/unused/prestacao_contas/prestacao_de_contas_eleitorais_candidatos_2022.zip
+tse@2043-01-11#1	receitas_candidatos_2024_AC.csv	http://127.0.0.1:1/unused/prestacao_contas/prestacao_de_contas_eleitorais_candidatos_2024.zip
+tse@2043-01-11#1	receitas_candidatos_2026_AC.csv	http://127.0.0.1:1/unused/prestacao_contas/prestacao_de_contas_eleitorais_candidatos_2026.zip
 == company_version ==
 company:00000000	BANCO DO BRASIL SA	2038	05	DF	9701	6422100	02	120000000000.00	receita@2042-01-01#1	receita@2042-01-01#1	~	Empresas.csv:1
 company:98990001	ALFA PARTICIPAÇÕES S.A.	2054	05	RJ	6001	4711302	02	50000000.00	receita@2042-01-01#1	receita@2042-01-01#1	~	Empresas.csv:2
@@ -333,3 +358,86 @@ partner_of	person[receita|98990026|ROBERTO DOADOR FICTICIO|555666]	company:98990
 partner_of	person[receita|98990027|CINTIA GUEDES|141516]	company:98990027	receita|98990027|CINTIA GUEDES|141516	~	{"role": "49"}	fact	~	2010-01-10	~	~	receita@2042-01-01#1	Socios.csv:37	receita@2042-01-01#1	~
 partner_of	person[receita|98990028|DEBORA HOLANDA|161718]	company:98990028	receita|98990028|DEBORA HOLANDA|161718	~	{"role": "49"}	fact	~	2019-09-19	~	~	receita@2042-01-01#1	Socios.csv:38	receita@2042-01-01#1	~
 partner_of	person[receita|98AB0001|IGOR NASCIMENTO|012345]	company:98AB0001	receita|98AB0001|IGOR NASCIMENTO|012345	~	{"role": "49"}	fact	~	2026-08-01	~	~	receita@2042-01-01#1	Socios.csv:19	receita@2042-01-01#1	~
+== search_company ==
+tie 11+1	company:98990009	C	ZETA IMPORTACAO E EXPORTACAO LTDA	4	'exportacao' 'importacao' 'zeta'
+tie 12+1	company:98990005	C	BETA SERVICOS DE ENGENHARIA LTDA	3	'beta' 'engenharia' 'servicos'
+tie 13+1	company:98990008	C	EPSILON AGROPECUARIA LTDA	3	'agropecuaria' 'epsilon'
+tie 14+1	company:98AB0001	C	ETA TECNOLOGIA LTDA	3	'eta' 'tecnologia'
+tie 15+1	company:98990024	C	FI CAFE E RESTAURANTE LTDA	3	'cafe' 'fi' 'restaurante'
+tie 16+1	company:98990012	C	IOTA EDUCACAO INFANTIL LTDA	3	'educacao' 'infantil' 'iota'
+tie 17+1	company:98990017	C	NI SUPERMERCADOS S.A.	3	'ni' 'supermercados'
+tie 18+1	company:98990018	C	OMICRON LOGISTICA LTDA	3	'logistica' 'omicron'
+tie 2+1	company:98990001	C	ALFA PARTICIPACOES S.A.	6	'alfa' 'participacoes'
+tie 20+1	company:98990026	C	PSI COMUNICACAO LTDA	3	'comunicacao' 'psi'
+tie 21+1	company:98990020	C	RO SOFTWARE LTDA	3	'ro' 'software'
+tie 22+1	company:98990028	C	AGATA JOIAS LTDA	2	'agata' 'joias'
+tie 23+1	company:98990003	C	ALFA COMERCIO DE ALIMENTOS LTDA	2	'alfa' 'alimentos' 'comercio'
+tie 27+1	company:98990016	C	ASSOCIACAO DE MORADORES DO BAIRRO NOVO	2	'associacao' 'bairro' 'moradores' 'novo'
+tie 29+1	company:98990013	C	CAPA MATERIAIS DE CONSTRUCAO LTDA	2	'capa' 'construcao' 'materiais'
+tie 37+1	company:98990023	C	IPSILON PAPELARIA LTDA	2	'ipsilon' 'papelaria'
+tie 40+1	company:98990014	C	LAMBDA CONSULTORIA LTDA	2	'consultoria' 'lambda'
+tie 43+1	company:98990027	C	OMEGA MERCEARIA LTDA	2	'mercearia' 'omega'
+tie 45+1	company:98990004	C	PADARIA SOL NASCENTE LTDA	2	'nascente' 'padaria' 'sol'
+tie 48+1	company:98990025	C	QUI CLINICA VETERINARIA LTDA	2	'clinica' 'qui' 'veterinaria'
+tie 52+1	company:98990021	C	SIGMA AUTO PECAS LTDA	2	'auto' 'pecas' 'sigma'
+tie 54+1	company:98990011	C	TETA COMERCIO "BOA VISTA" LTDA	2	'boa' 'comercio' 'teta' 'vista'
+tie 63+1	company:98990077	C	EMPRESA DOADORA INVENTADA LTDA	1	'doadora' 'empresa' 'inventada'
+tie 7+1	company:98990002	C	ALFA INVESTIMENTOS LTDA	4	'alfa' 'investimentos'
+tie 70+1	company:98999999	C	OMEGA HOLDING DO BRASIL LTDA	1	'brasil' 'holding' 'omega'
+tie 76+1	company:00000000	C	BANCO DO BRASIL SA	0	'banco' 'brasil'
+tie 77+1	company:98990015	C	MARIA FICTICIA DE SOUZA 00011122233	0	'ficticia' 'maria' 'souza'
+tie 78+1	company:98990019	C	PI ODONTOLOGIA LTDA	0	'odontologia' 'pi'
+tie 79+1	company:98990022	C	TAU REFORMAS LTDA	0	'reformas' 'tau'
+tie 8+1	company:98990007	C	DELTA CONFECCOES LTDA	4	'confeccoes' 'delta'
+tie 9+1	company:98990006	C	GAMA TRANSPORTES LTDA	4	'gama' 'transportes'
+== search_frequent_token ==
+== search_other ==
+tie 42+1	foreign:receita:98990001:NORTHWIND HOLDINGS LIMITED	E	NORTHWIND HOLDINGS LIMITED	2	'holdings' 'limited' 'northwind'
+tie 46+1	party:PSDB	A	PARTIDO DA SOCIAL DEMOCRACIA BRASILEIRA	2	'brasileira' 'democracia' 'partido' 'social'
+tie 6+1	party:PT	A	PARTIDO DOS TRABALHADORES	5	'partido' 'trabalhadores'
+tie 69+1	party:MDB	A	MOVIMENTO DEMOCRATICO BRASILEIRO	1	'brasileiro' 'democratico' 'movimento'
+tie 71+1	party:PC DO B	A	PARTIDO COMUNISTA DO BRASIL	1	'brasil' 'comunista' 'partido'
+tie 72+1	party:PSD	A	PARTIDO SOCIAL DEMOCRATICO	1	'democratico' 'partido' 'social'
+tie 73+1	party:PSOL	A	PARTIDO SOCIALISMO E LIBERDADE	1	'liberdade' 'partido' 'socialismo'
+== search_person ==
+tie 1+1	person[tse|cand:2022:10001600001|MARIANA FICTICIA DOS SANTOS|123456;tse|cand:2024:10002200001|MARIANA FICTICIA DOS SANTOS|;tse|cand:2026:10002600001|MARIANA FICTICIA DOS SANTOS|123456]	P	MARIANA FICTICIA DOS SANTOS	11	'ficticia' 'mariana' 'santos'
+tie 10+1	person[tse|cand:2022:10001600002|JOAO PEDRO INVENTADO|]	P	JOAO PEDRO INVENTADO	4	'inventado' 'joao' 'pedro'
+tie 19+1	person[receita|98990012|PATRICIA MENDES|678901]	P	PATRICIA MENDES	3	'mendes' 'patricia'
+tie 24+1	person[receita|98990002|ANA LUCIA PEREIRA|234567]	P	ANA LUCIA PEREIRA	2	'ana' 'lucia' 'pereira'
+tie 25+1	person[tse|cand:2022:10001600004|ANA PAULA MODELO|654987]	P	ANA PAULA MODELO	2	'ana' 'modelo' 'paula'
+tie 26+1	person[receita|98990004|ANTONIO MARCOS RIBEIRO|345678]	P	ANTONIO MARCOS RIBEIRO	2	'antonio' 'marcos' 'ribeiro'
+tie 28+1	person[receita|98990025|BRUNO FARIAS|121314]	P	BRUNO FARIAS	2	'bruno' 'farias'
+tie 3+1	person[receita|98990001|JOSE CONCEICAO BRANDAO|123456;receita|98990003|JOSE CONCEICAO BRANDAO|123456;receita|98990005|JOSE CONCEICAO BRANDAO|123456;tse|donor:2022:10001600003|JOSE CONCEICAO BRANDAO|123456]	P	JOSE CONCEICAO BRANDAO	6	'brandao' 'conceicao' 'jose'
+tie 30+1	person[receita|98990027|CINTIA GUEDES|141516]	P	CINTIA GUEDES	2	'cintia' 'guedes'
+tie 31+1	person[receita|98990028|DEBORA HOLANDA|161718]	P	DEBORA HOLANDA	2	'debora' 'holanda'
+tie 32+1	person[receita|98990006|FERNANDO DIAS LOPES|789012]	P	FERNANDO DIAS LOPES	2	'dias' 'fernando' 'lopes'
+tie 33+1	person[receita|98990008|GABRIELA MOURA|890123]	P	GABRIELA MOURA	2	'gabriela' 'moura'
+tie 34+1	person[receita|98990009|HELENA CASTRO|901234]	P	HELENA CASTRO	2	'castro' 'helena'
+tie 35+1	person[tse|cand:2022:10001600010|HELENA MARIA INVENTADA|852963]	P	HELENA MARIA INVENTADA	2	'helena' 'inventada' 'maria'
+tie 36+1	person[receita|98AB0001|IGOR NASCIMENTO|012345]	P	IGOR NASCIMENTO	2	'igor' 'nascimento'
+tie 38+1	person[receita|98990011|JULIANA PRADO|135791]	P	JULIANA PRADO	2	'juliana' 'prado'
+tie 39+1	person[receita|98990013|KLEBER ANDRADE|246802]	P	KLEBER ANDRADE	2	'andrade' 'kleber'
+tie 4+1	person[tse|donor:2022:10001600001|ROBERTO DOADOR FICTICIO|222333;tse|donor:2022:10001600003|ROBERTO DOADOR FICTICIO|222333;tse|donor:2022:10001600010|ROBERTO DOADOR FICTICIO|222333;tse|donor:2024:10002200001|ROBERTO DOADOR FICTICIO|222333;tse|donor:2026:10002600001|ROBERTO DOADOR FICTICIO|222333]	P	ROBERTO DOADOR FICTICIO	6	'doador' 'ficticio' 'roberto'
+tie 41+1	person[receita|98990012|LUCAS HENRIQUE MENDES|567890]	P	LUCAS HENRIQUE MENDES	2	'henrique' 'lucas' 'mendes'
+tie 44+1	person[receita|98990016|OSVALDO QUEIROZ|223344]	P	OSVALDO QUEIROZ	2	'osvaldo' 'queiroz'
+tie 47+1	person[tse|cand:2024:10002200002|PAULO HENRIQUE TESTE|]	P	PAULO HENRIQUE TESTE	2	'henrique' 'paulo' 'teste'
+tie 49+1	person[receita|98990017|RENATA VIEIRA|334455]	P	RENATA VIEIRA	2	'renata' 'vieira'
+tie 5+1	person[tse|cand:2022:10001600003|CARLOS EDUARDO EXEMPLO|789012]	P	CARLOS EDUARDO EXEMPLO	5	'carlos' 'eduardo' 'exemplo'
+tie 50+1	person[receita|98990026|ROBERTO DOADOR FICTICIO|555666]	P	ROBERTO DOADOR FICTICIO	2	'doador' 'ficticio' 'roberto'
+tie 51+1	person[receita|98990018|SERGIO UCHOA|445566]	P	SERGIO UCHOA	2	'sergio' 'uchoa'
+tie 53+1	person[receita|98990014|SIMONE TAVARES|112233]	P	SIMONE TAVARES	2	'simone' 'tavares'
+tie 55+1	person[receita|98990020|VALERIA ZANETTI|667788]	P	VALERIA ZANETTI	2	'valeria' 'zanetti'
+tie 56+1	person[receita|98990021|WAGNER BARROS|778899]	P	WAGNER BARROS	2	'barros' 'wagner'
+tie 57+1	person[receita|98990023|YARA CORDEIRO|889900]	P	YARA CORDEIRO	2	'cordeiro' 'yara'
+tie 58+1	person[receita|98990024|ZELIA DUARTE|990011]	P	ZELIA DUARTE	2	'duarte' 'zelia'
+tie 59+1	person[receita|98990024|ALVARO ESTEVES|101112]	P	ALVARO ESTEVES	1	'alvaro' 'esteves'
+tie 60+1	person[tse|cand:2022:10001600006|BEATRIZ EXEMPLAR SOUZA|999888]	P	BEATRIZ EXEMPLAR SOUZA	1	'beatriz' 'exemplar' 'souza'
+tie 61+1	person[receita|98990005|BEATRIZ GONCALVES|456789]	P	BEATRIZ GONCALVES	1	'beatriz' 'goncalves'
+tie 62+1	person[receita|98990001|CARLOS ALBERTO FICTICIO|654321]	P	CARLOS ALBERTO FICTICIO	1	'alberto' 'carlos' 'ficticio'
+tie 64+3	person[receita|98990026|LUCIA DOADORA EXEMPLO|888999]	P	LUCIA DOADORA EXEMPLO	1	'doadora' 'exemplo' 'lucia'
+tie 64+3	person[tse|donor:2022:10001600002|LUCIA DOADORA EXEMPLO|666777]	P	LUCIA DOADORA EXEMPLO	1	'doadora' 'exemplo' 'lucia'
+tie 64+3	person[tse|donor:2026:10002600001|LUCIA DOADORA EXEMPLO|666777]	P	LUCIA DOADORA EXEMPLO	1	'doadora' 'exemplo' 'lucia'
+tie 67+1	person[tse|donor:2022:10001600002|MARCOS SEM DOCUMENTO|]	P	MARCOS SEM DOCUMENTO	1	'documento' 'marcos' 'sem'
+tie 68+1	person[tse|donor:2024:10002200002|MARIANA FICTICIA DOS SANTOS|123456]	P	MARIANA FICTICIA DOS SANTOS	1	'ficticia' 'mariana' 'santos'
+tie 74+1	person[receita|98990018|TANIA XAVIER|556677]	P	TANIA XAVIER	1	'tania' 'xavier'
+tie 75+1	person[tse|donor:2026:10002600001|TEREZA NOVA DOADORA|712345]	P	TEREZA NOVA DOADORA	1	'doadora' 'nova' 'tereza'

@@ -3,10 +3,11 @@
 # keep the final state must pass without rewriting it. Rewrite (-update or
 # UPDATE_GOLDEN=1) only for an intended difference, reviewed in this diff.
 # first collection interrupted in its third relationship chunk (two committed), then repeated
-# masked: relationship first collection (depends on how claims are cut into chunks)
-# sha256 ab9c4336610e4d9c8e15c09687e6cd419c527d33965bc4633129aef642dea746
+# masked: first collection of the relationships written by the interrupted collection (depends on how claims are cut into chunks)
+# sha256 4280f36596b29a014f2fc5cc57512c7b29ad5596f431ba757b8b3754de5b6ce8
 # collection                        2 lines  sha256 85d50a204ba2118fdb20de7a23275fd36b3eab1d828e2116a2887aa5b40279d7
 # collection_file                  16 lines  sha256 580e2efdbd3e50e7dd5b71c68917ad483bd14c2ab8c82676836f1cea3c25cafc
+# collection_file_url              16 lines  sha256 23d5e706b3824b1cb745b233e90f85d881cfb757d14730e668aefc9cdab378f6
 # company_version                   0 lines  sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 # entity                           20 lines  sha256 5aa8f4b3c4306c93bd6a0778c08c6c24235ca939ab0b3693154cd1aca2f9f1c4
 # identity_ambiguous_key            0 lines  sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
@@ -16,6 +17,10 @@
 # person_entity_without_records     7 lines  sha256 87a4b65a7329b7fc0cf963a2764d555341c83c6ee32c84a5f3ca52e9e3922c19
 # person_record                    18 lines  sha256 973ff5f16b31eae179c91e6afee97715593dc38923256de6ae7b37444bb36ecc
 # relationship                     24 lines  sha256 cce9028c12d3d162cb505fa5ad117a9722e0ab6a9a1b6a2ea8ca7dc5372a3da9
+# search_company                    2 lines  sha256 06b436f71feb48d671dfad1b60d7833385cc7c84d33f3fcecaea7f831c397e89
+# search_frequent_token             0 lines  sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+# search_other                      6 lines  sha256 bc9eef2370eb894725c6ba001f526159f65e66256c1712645e0de0a81fbc1afb
+# search_person                    12 lines  sha256 892238f1a1e73f16fd0a00f61b63601635e7e1f87081f2affa84ccce0cd0aba9
 == collection ==
 tse@2043-01-10#1	failed	{"full": true}
 tse@2043-01-10#2	done	{"full": true}
@@ -36,6 +41,23 @@ tse@2043-01-10#2	receitas_candidatos_2022_AC.csv	raw/tse/2043-01-10/prestacao_de
 tse@2043-01-10#2	receitas_candidatos_2022_BR.csv	raw/tse/2043-01-10/prestacao_de_contas_eleitorais_candidatos_2022.zip
 tse@2043-01-10#2	receitas_candidatos_2024_AC.csv	raw/tse/2043-01-10/prestacao_de_contas_eleitorais_candidatos_2024.zip
 tse@2043-01-10#2	receitas_candidatos_2026_AC.csv	raw/tse/2043-01-10/prestacao_de_contas_eleitorais_candidatos_2026.zip
+== collection_file_url ==
+tse@2043-01-10#1	consulta_cand_2022_AC.csv	http://127.0.0.1:1/unused/consulta_cand/consulta_cand_2022.zip
+tse@2043-01-10#1	consulta_cand_2022_BR.csv	http://127.0.0.1:1/unused/consulta_cand/consulta_cand_2022.zip
+tse@2043-01-10#1	consulta_cand_2024_AC.csv	http://127.0.0.1:1/unused/consulta_cand/consulta_cand_2024.zip
+tse@2043-01-10#1	consulta_cand_2026_AC.csv	http://127.0.0.1:1/unused/consulta_cand/consulta_cand_2026.zip
+tse@2043-01-10#1	receitas_candidatos_2022_AC.csv	http://127.0.0.1:1/unused/prestacao_contas/prestacao_de_contas_eleitorais_candidatos_2022.zip
+tse@2043-01-10#1	receitas_candidatos_2022_BR.csv	http://127.0.0.1:1/unused/prestacao_contas/prestacao_de_contas_eleitorais_candidatos_2022.zip
+tse@2043-01-10#1	receitas_candidatos_2024_AC.csv	http://127.0.0.1:1/unused/prestacao_contas/prestacao_de_contas_eleitorais_candidatos_2024.zip
+tse@2043-01-10#1	receitas_candidatos_2026_AC.csv	http://127.0.0.1:1/unused/prestacao_contas/prestacao_de_contas_eleitorais_candidatos_2026.zip
+tse@2043-01-10#2	consulta_cand_2022_AC.csv	http://127.0.0.1:1/unused/consulta_cand/consulta_cand_2022.zip
+tse@2043-01-10#2	consulta_cand_2022_BR.csv	http://127.0.0.1:1/unused/consulta_cand/consulta_cand_2022.zip
+tse@2043-01-10#2	consulta_cand_2024_AC.csv	http://127.0.0.1:1/unused/consulta_cand/consulta_cand_2024.zip
+tse@2043-01-10#2	consulta_cand_2026_AC.csv	http://127.0.0.1:1/unused/consulta_cand/consulta_cand_2026.zip
+tse@2043-01-10#2	receitas_candidatos_2022_AC.csv	http://127.0.0.1:1/unused/prestacao_contas/prestacao_de_contas_eleitorais_candidatos_2022.zip
+tse@2043-01-10#2	receitas_candidatos_2022_BR.csv	http://127.0.0.1:1/unused/prestacao_contas/prestacao_de_contas_eleitorais_candidatos_2022.zip
+tse@2043-01-10#2	receitas_candidatos_2024_AC.csv	http://127.0.0.1:1/unused/prestacao_contas/prestacao_de_contas_eleitorais_candidatos_2024.zip
+tse@2043-01-10#2	receitas_candidatos_2026_AC.csv	http://127.0.0.1:1/unused/prestacao_contas/prestacao_de_contas_eleitorais_candidatos_2026.zip
 == company_version ==
 == entity ==
 company:98990001	company	98990001	ALFA PARTICIPAÇÕES S.A.	ALFA PARTICIPACOES S A
@@ -119,3 +141,27 @@ donated_to	person[tse|donor:2022:10001600002|LUCIA DOADORA EXEMPLO|666777;tse|do
 donated_to	person[tse|donor:2022:10001600002|LUCIA DOADORA EXEMPLO|666777;tse|donor:2026:10002600001|LUCIA DOADORA EXEMPLO|666777]	person[tse|cand:2022:10001600002|JOAO PEDRO INVENTADO|]	tse|donor:2022:10001600002|LUCIA DOADORA EXEMPLO|666777	tse|cand:2022:10001600002|JOAO PEDRO INVENTADO|	{"date": "2022-09-25", "role": "50009", "year": 2022, "items": 2, "amount": "350.00", "origin": "Recursos de pessoas físicas", "receipt_id": "50009", "origin_code": "10010200"}	fact	~	2022-09-25	~	~	*	receitas_candidatos_2022_AC.csv:11	tse@2043-01-10#2	~
 donated_to	person[tse|donor:2022:10001600002|MARCOS SEM DOCUMENTO|]	person[tse|cand:2022:10001600002|JOAO PEDRO INVENTADO|]	tse|donor:2022:10001600002|MARCOS SEM DOCUMENTO|	tse|cand:2022:10001600002|JOAO PEDRO INVENTADO|	{"date": "2022-09-13", "role": "50012", "year": 2022, "items": 1, "amount": "50.00", "origin": "Recursos de pessoas físicas", "receipt_id": "50012", "origin_code": "10010200"}	fact	~	2022-09-13	~	~	*	receitas_candidatos_2022_AC.csv:15	tse@2043-01-10#2	~
 donated_to	person[tse|donor:2022:10001600003|JOSE CONCEICAO BRANDAO|123456]	person[tse|cand:2022:10001600003|CARLOS EDUARDO EXEMPLO|789012]	tse|donor:2022:10001600003|JOSE CONCEICAO BRANDAO|123456	tse|cand:2022:10001600003|CARLOS EDUARDO EXEMPLO|789012	{"date": "2022-09-20", "role": "50018", "year": 2022, "items": 1, "amount": "800.00", "origin": "Recursos de pessoas físicas", "receipt_id": "50018", "origin_code": "10010200"}	fact	~	2022-09-20	~	~	*	receitas_candidatos_2022_AC.csv:22	tse@2043-01-10#2	~
+== search_company ==
+tie 12+1	company:98990001	C	ALFA PARTICIPACOES S.A.	1	'alfa' 'participacoes'
+tie 14+1	company:98990077	C	EMPRESA DOADORA INVENTADA LTDA	1	'doadora' 'empresa' 'inventada'
+== search_frequent_token ==
+== search_other ==
+tie 10+1	party:PSDB	A	PARTIDO DA SOCIAL DEMOCRACIA BRASILEIRA	2	'brasileira' 'democracia' 'partido' 'social'
+tie 17+1	party:MDB	A	MOVIMENTO DEMOCRATICO BRASILEIRO	1	'brasileiro' 'democratico' 'movimento'
+tie 18+1	party:PC DO B	A	PARTIDO COMUNISTA DO BRASIL	1	'brasil' 'comunista' 'partido'
+tie 19+1	party:PSD	A	PARTIDO SOCIAL DEMOCRATICO	1	'democratico' 'partido' 'social'
+tie 20+1	party:PSOL	A	PARTIDO SOCIALISMO E LIBERDADE	1	'liberdade' 'partido' 'socialismo'
+tie 3+1	party:PT	A	PARTIDO DOS TRABALHADORES	5	'partido' 'trabalhadores'
+== search_person ==
+tie 1+1	person[tse|cand:2022:10001600001|MARIANA FICTICIA DOS SANTOS|123456;tse|cand:2026:10002600001|MARIANA FICTICIA DOS SANTOS|123456;tse|donor:2024:10002200002|MARIANA FICTICIA DOS SANTOS|123456]	P	MARIANA FICTICIA DOS SANTOS	8	'ficticia' 'mariana' 'santos'
+tie 11+1	person[tse|cand:2024:10002200002|PAULO HENRIQUE TESTE|]	P	PAULO HENRIQUE TESTE	2	'henrique' 'paulo' 'teste'
+tie 13+1	person[tse|cand:2022:10001600006|BEATRIZ EXEMPLAR SOUZA|999888]	P	BEATRIZ EXEMPLAR SOUZA	1	'beatriz' 'exemplar' 'souza'
+tie 15+1	person[tse|donor:2022:10001600003|JOSE CONCEICAO BRANDAO|123456]	P	JOSE CONCEICAO BRANDAO	1	'brandao' 'conceicao' 'jose'
+tie 16+1	person[tse|donor:2022:10001600002|MARCOS SEM DOCUMENTO|]	P	MARCOS SEM DOCUMENTO	1	'documento' 'marcos' 'sem'
+tie 2+1	person[tse|cand:2022:10001600003|CARLOS EDUARDO EXEMPLO|789012]	P	CARLOS EDUARDO EXEMPLO	5	'carlos' 'eduardo' 'exemplo'
+tie 4+1	person[tse|donor:2022:10001600001|ROBERTO DOADOR FICTICIO|222333;tse|donor:2022:10001600003|ROBERTO DOADOR FICTICIO|222333;tse|donor:2022:10001600010|ROBERTO DOADOR FICTICIO|222333;tse|donor:2024:10002200001|ROBERTO DOADOR FICTICIO|222333]	P	ROBERTO DOADOR FICTICIO	5	'doador' 'ficticio' 'roberto'
+tie 5+1	person[tse|cand:2022:10001600002|JOAO PEDRO INVENTADO|]	P	JOAO PEDRO INVENTADO	4	'inventado' 'joao' 'pedro'
+tie 6+1	person[tse|cand:2022:10001600004|ANA PAULA MODELO|654987]	P	ANA PAULA MODELO	2	'ana' 'modelo' 'paula'
+tie 7+1	person[tse|cand:2022:10001600010|HELENA MARIA INVENTADA|852963]	P	HELENA MARIA INVENTADA	2	'helena' 'inventada' 'maria'
+tie 8+1	person[tse|donor:2022:10001600002|LUCIA DOADORA EXEMPLO|666777;tse|donor:2026:10002600001|LUCIA DOADORA EXEMPLO|666777]	P	LUCIA DOADORA EXEMPLO	2	'doadora' 'exemplo' 'lucia'
+tie 9+1	person[tse|cand:2024:10002200001|MARIANA FICTICIA DOS SANTOS|]	P	MARIANA FICTICIA DOS SANTOS	2	'ficticia' 'mariana' 'santos'

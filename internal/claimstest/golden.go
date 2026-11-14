@@ -32,24 +32,29 @@ func Updating() bool { return *update || os.Getenv("UPDATE_GOLDEN") == "1" }
 
 // Mask rewrites one line of a section before it is compared; it is for the
 // few fields a scenario cannot fix by construction (see
-// MaskRelationshipFirstCollection). nil masks nothing.
+// MaskFirstCollectionOf). nil masks nothing.
 type Mask func(section, line string) string
 
-// MaskRelationshipFirstCollection replaces the first collection of every
-// relationship by "*". For a load interrupted between two relationship
-// chunks and repeated, which relationships the failed run wrote depends on
-// how claims are cut into chunks (task 2 changes it), so the first collection
-// of a relationship is not a property of the final state there; everything
-// else is.
-func MaskRelationshipFirstCollection(section, line string) string {
-	if section != SecRelationship {
-		return line
+// MaskFirstCollectionOf returns a Mask that replaces by "*" the first
+// collection of every relationship first written by a collection of the
+// interrupted source and date (key prefix "source@date#", see c_col): the
+// failed run or its repeat. For a load interrupted between two relationship
+// chunks and repeated, which of those relationships the failed run wrote
+// depends on how claims are cut into chunks (task 2 changed it, a parallel
+// load would change it again), so that field is not a property of the final
+// state there. Every other field, and the first collection of relationships
+// written by other collections, is compared exactly.
+func MaskFirstCollectionOf(prefix string) Mask {
+	return func(section, line string) string {
+		if section != SecRelationship {
+			return line
+		}
+		f := strings.Split(line, FieldSep)
+		if len(f) > relationshipFirstCol && strings.HasPrefix(f[relationshipFirstCol], prefix) {
+			f[relationshipFirstCol] = "*"
+		}
+		return strings.Join(f, FieldSep)
 	}
-	f := strings.Split(line, FieldSep)
-	if len(f) > relationshipFirstCol {
-		f[relationshipFirstCol] = "*"
-	}
-	return strings.Join(f, FieldSep)
 }
 
 // apply returns sections with mask applied to every line (lines re-sorted).
@@ -239,8 +244,8 @@ func parseGolden(s string) (map[string]string, error) {
 //   - run(t, false) on a fresh schema, run(t, true) on another fresh schema
 //     whose id sequences were moved by ShiftIDs: the two canonical dumps must
 //     be identical (the dump is deterministic and id-independent);
-//   - after each run, the live search tables must equal a from-scratch
-//     rebuild (CheckSearchMatchesRebuild);
+//   - the live search tables are part of the dump (SearchGolden), and after
+//     each run they must equal a from-scratch rebuild (CheckSearchMatchesRebuild);
 //   - the dump of the first run must match the golden file (CheckGolden,
 //     with mask; note goes into the file's header).
 //
@@ -254,6 +259,16 @@ func Equivalence(t *testing.T, golden string, mask Mask, note string, run func(t
 		_, d, err := CanonicalDump(ctx, pool)
 		if err != nil {
 			t.Fatal(err)
+		}
+		// The search tables as the run left them (built by the collections'
+		// refreshes) are part of the golden, so a change to the rebuild
+		// itself (task 5) is compared with today's output too.
+		st, err := SearchGolden(ctx, pool)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for name, text := range st {
+			d[name] = text
 		}
 		dumps[i] = d
 		CheckSearchMatchesRebuild(t, ctx, pool)

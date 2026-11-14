@@ -28,7 +28,7 @@ import (
 // by the test packages, a key is per edition month and it refuses different
 // bytes under a key it holds. So each month always carries the same edition:
 // January eqBase, February and March eqEdition2, April eqEdition3, May
-// eqShrunk, June eqEdition2.
+// eqShrunk, June eqEdition2, July to September eqLife1 to eqLife3.
 var (
 	eqRef1 = time.Date(2041, 1, 1, 0, 0, 0, 0, time.UTC)
 	eqRef2 = time.Date(2041, 2, 1, 0, 0, 0, 0, time.UTC)
@@ -36,6 +36,9 @@ var (
 	eqRef4 = time.Date(2041, 4, 1, 0, 0, 0, 0, time.UTC)
 	eqRef5 = time.Date(2041, 5, 1, 0, 0, 0, 0, time.UTC)
 	eqRef6 = time.Date(2041, 6, 1, 0, 0, 0, 0, time.UTC)
+	eqRef7 = time.Date(2041, 7, 1, 0, 0, 0, 0, time.UTC)
+	eqRef8 = time.Date(2041, 8, 1, 0, 0, 0, 0, time.UTC)
+	eqRef9 = time.Date(2041, 9, 1, 0, 0, 0, 0, time.UTC)
 )
 
 // eqThreshold is the resolver's CommonNameThreshold in these scenarios: low
@@ -74,7 +77,9 @@ func (s *eqSession) ok(t *testing.T, ref time.Time, zips map[string][]byte, scop
 }
 
 // interrupted runs a full collection that stops at the checkpoint for which
-// stop returns true, as a crash there would.
+// stop returns true, as a crash there would. checkpointHook is a package
+// global: the scenarios (and every test of this package that sets it) must
+// not run in parallel.
 func (s *eqSession) interrupted(t *testing.T, ref time.Time, zips map[string][]byte, stop func(point string) bool) {
 	t.Helper()
 	checkpointHook = func(p string) error {
@@ -83,8 +88,8 @@ func (s *eqSession) interrupted(t *testing.T, ref time.Time, zips map[string][]b
 		}
 		return nil
 	}
+	defer func() { checkpointHook = nil }()
 	err := s.collect(t, ref, zips, full)
-	checkpointHook = nil
 	if !errors.Is(err, errInjected) {
 		t.Fatalf("interrupted collection: err = %v, want the injected failure", err)
 	}
@@ -241,6 +246,34 @@ var eqShrunk = chain(eqIdentityRows, func(name string, b []byte) []byte {
 	return out
 })
 
+// The proposal life cycle (scenario proposal_lifecycle). Person records are
+// never removed (an edition that drops a partner only closes its
+// relationships, and a proposal counts closed relationships too), so a
+// proposal changes only when its name is touched again by a new record:
+//   - eqLife1: eqBase and a third record of CARLA|700002;
+//   - eqLife2: a new CARLA record (fragment 700003) touches the name;
+//   - eqLife3: two new CARLA|700001 records, in two new entities.
+var (
+	eqLife1 = chain(eqIdentityRows, appendLines("Socios.csv",
+		socio("98990016", "CARLA REPETIDA FICTÍCIA", "700002", "22", "20200303")))
+	eqLife2 = chain(eqLife1, appendLines("Socios.csv",
+		socio("98990020", "CARLA REPETIDA FICTÍCIA", "700003", "49", "20301215")))
+	eqLife3 = chain(eqLife2, appendLines("Socios.csv",
+		socio("98990011", "CARLA REPETIDA FICTÍCIA", "700001", "22", "20310115"),
+		socio("98990013", "CARLA REPETIDA FICTÍCIA", "700001", "49", "20310115")))
+)
+
+// proposalState returns status, number of records and connections of the
+// proposal whose group key ends with suffix.
+func (s *eqSession) proposalState(t *testing.T, suffix string) (status string, records, connections int) {
+	t.Helper()
+	if err := s.e.pool.QueryRow(ctx, `SELECT status, cardinality(record_ids), connections FROM identity_proposal
+		WHERE group_key LIKE '%' || $1`, suffix).Scan(&status, &records, &connections); err != nil {
+		t.Fatalf("proposal %s: %v", suffix, err)
+	}
+	return status, records, connections
+}
+
 func chunkAt(n int) func(string) bool {
 	return func(p string) bool { return p == fmt.Sprintf("relationship chunk %d", n) }
 }
@@ -268,15 +301,15 @@ var eqScenarios = []eqScenario{
 		s.interrupted(t, eqRef2, fixtureZips(t, eqEdition2), func(p string) bool { return p == "persons" })
 		s.ok(t, eqRef2, fixtureZips(t, eqEdition2), full)
 	}},
-	{name: "interrupted_after_relationship_chunk_1", mask: claimstest.MaskRelationshipFirstCollection,
-		note: "second edition interrupted after the first relationship chunk, then repeated\nmasked: relationship first collection (depends on how claims are cut into chunks)",
+	{name: "interrupted_after_relationship_chunk_1", mask: claimstest.MaskFirstCollectionOf("receita@2041-02-01#"),
+		note: "second edition interrupted after the first relationship chunk, then repeated\nmasked: first collection of the relationships written by the interrupted edition (depends on how claims are cut into chunks)",
 		run: func(t *testing.T, s *eqSession) {
 			s.ok(t, eqRef1, eqBase(t), full)
 			s.interrupted(t, eqRef2, fixtureZips(t, eqEdition2), chunkAt(1))
 			s.ok(t, eqRef2, fixtureZips(t, eqEdition2), full)
 		}},
-	{name: "interrupted_after_relationship_chunk_3", mask: claimstest.MaskRelationshipFirstCollection,
-		note: "first load interrupted after the third relationship chunk, then repeated\nmasked: relationship first collection (depends on how claims are cut into chunks)",
+	{name: "interrupted_after_relationship_chunk_3", mask: claimstest.MaskFirstCollectionOf("receita@2041-01-01#"),
+		note: "first load interrupted after the third relationship chunk, then repeated\nmasked: first collection of the relationships written by the interrupted edition (depends on how claims are cut into chunks)",
 		run: func(t *testing.T, s *eqSession) {
 			s.interrupted(t, eqRef1, eqBase(t), chunkAt(3))
 			s.ok(t, eqRef1, eqBase(t), full)
@@ -332,6 +365,68 @@ var eqScenarios = []eqScenario{
 			}
 			s.ok(t, eqRef4, fixtureZips(t, eqEdition3), full)
 		}},
+}
+
+func init() {
+	eqScenarios = append(eqScenarios,
+		eqScenario{name: "proposal_lifecycle",
+			note: "proposals that go obsolete and reopen, and one whose records and connections shrink, across three editions",
+			run: func(t *testing.T, s *eqSession) {
+				r := s.p.Resolver
+				s.ok(t, eqRef7, fixtureZips(t, eqLife1), full)
+				if st, n, _ := s.proposalState(t, "|700001"); st != "pending" || n != 2 {
+					t.Fatalf("CARLA|700001 after the first edition: %s with %d records, want pending with 2", st, n)
+				}
+				_, n2, c2 := s.proposalState(t, "|700002")
+				if n2 != 3 {
+					t.Fatalf("CARLA|700002 has %d records, want 3", n2)
+				}
+				// An analyst joins both records of CARLA|700001 (locked: nothing
+				// is left to propose) and locks one record of CARLA|700002 into
+				// another person (that proposal loses a record and its links).
+				if _, err := r.Merge(t.Context(), []int64{
+					s.record(t, "98990018", "CARLA", "700001"), s.record(t, "98990021", "CARLA", "700001"),
+				}, "analyst-a", "same person (test)"); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := r.Merge(t.Context(), []int64{
+					s.record(t, "98990016", "CARLA", "700002"), s.record(t, "98990016", "OSVALDO", "223344"),
+				}, "analyst-a", "same person (test)"); err != nil {
+					t.Fatal(err)
+				}
+				s.ok(t, eqRef8, fixtureZips(t, eqLife2), full)
+				if st, _, _ := s.proposalState(t, "|700001"); st != "obsolete" {
+					t.Fatalf("CARLA|700001 after the analyst merge and a new record of the name: %s, want obsolete", st)
+				}
+				if st, n, c := s.proposalState(t, "|700002"); st != "pending" || n != 2 || c >= c2 {
+					t.Fatalf("CARLA|700002: %s with %d records and %d connections, want pending with 2 and fewer than %d", st, n, c, c2)
+				}
+				s.ok(t, eqRef9, fixtureZips(t, eqLife3), full)
+				if st, n, _ := s.proposalState(t, "|700001"); st != "pending" || n != 2 {
+					t.Fatalf("CARLA|700001 after two new records: %s with %d records, want pending (reopened) with 2", st, n)
+				}
+			}},
+		eqScenario{name: "decisions_between_interrupted_load_and_repeat",
+			note: "second edition interrupted after the persons phase; analyst Decide (confirm, reject) and a Merge of a record the failed run wrote; then the edition repeated",
+			run: func(t *testing.T, s *eqSession) {
+				r := s.p.Resolver
+				s.ok(t, eqRef1, eqBase(t), full)
+				s.interrupted(t, eqRef2, fixtureZips(t, eqEdition2), func(p string) bool { return p == "persons" })
+				if err := r.Decide(t.Context(), s.proposal(t, "|700001"), true, "analyst-b"); err != nil {
+					t.Fatal(err)
+				}
+				if err := r.Decide(t.Context(), s.proposal(t, "|700002"), false, "analyst-b"); err != nil {
+					t.Fatal(err)
+				}
+				// MÁRCIA's record was written by the failed run and never resolved.
+				if _, err := r.Merge(t.Context(), []int64{
+					s.record(t, "98990030", "MARCIA", "710001"), s.record(t, "98990004", "ANTONIO", "345678"),
+				}, "analyst-b", "same person (test)"); err != nil {
+					t.Fatal(err)
+				}
+				s.ok(t, eqRef2, fixtureZips(t, eqEdition2), full)
+			}},
+	)
 }
 
 func TestEquivalence(t *testing.T) {

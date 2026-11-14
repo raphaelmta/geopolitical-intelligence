@@ -38,17 +38,21 @@ func TestDiffListsMissingAndExtraLines(t *testing.T) {
 	}
 }
 
-func TestMaskRelationshipFirstCollection(t *testing.T) {
+func TestMaskFirstCollectionOf(t *testing.T) {
+	mask := MaskFirstCollectionOf("receita@2031-02-01#")
 	f := make([]string, 15)
 	for i := range f {
-		f[i] = "f"
+		f[i] = "receita@2031-02-01#1"
+	}
+	got := mask(SecRelationship, strings.Join(f, FieldSep))
+	if strings.Split(got, FieldSep)[relationshipFirstCol] != "*" || strings.Count(got, "receita@") != 14 {
+		t.Errorf("masked line %q: only the first collection must be masked", got)
 	}
 	f[relationshipFirstCol] = "receita@2031-01-01#1"
-	got := MaskRelationshipFirstCollection(SecRelationship, strings.Join(f, FieldSep))
-	if strings.Contains(got, "receita@") || strings.Count(got, FieldSep) != 14 {
-		t.Errorf("masked line %q", got)
+	if l := strings.Join(f, FieldSep); mask(SecRelationship, l) != l {
+		t.Error("a relationship first written by another collection must not be masked")
 	}
-	if l := strings.Join(f, FieldSep); MaskRelationshipFirstCollection(SecEntity, l) != l {
+	if l := strings.Join(f, FieldSep); mask(SecEntity, l) != l {
 		t.Error("other sections must not be masked")
 	}
 }

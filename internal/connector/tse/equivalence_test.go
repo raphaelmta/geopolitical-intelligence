@@ -260,8 +260,8 @@ var eqScenarios = []eqScenario{
 			s.interrupted(t, eqRefB, fixtureZips(t, eqEdition2), "relationship staging", 1)
 			s.ok(t, eqRefB, fixtureZips(t, eqEdition2))
 		}},
-	{name: "interrupted_in_relationship_chunk_3", mask: claimstest.MaskRelationshipFirstCollection,
-		note: "first collection interrupted in its third relationship chunk (two committed), then repeated\nmasked: relationship first collection (depends on how claims are cut into chunks)",
+	{name: "interrupted_in_relationship_chunk_3", mask: claimstest.MaskFirstCollectionOf("tse@2043-01-10#"),
+		note: "first collection interrupted in its third relationship chunk (two committed), then repeated\nmasked: first collection of the relationships written by the interrupted collection (depends on how claims are cut into chunks)",
 		run: func(t *testing.T, s *eqSession) {
 			s.interrupted(t, eqRefA, fixtureZips(t, nil), "relationship staging", 3)
 			s.ok(t, eqRefA, fixtureZips(t, nil))

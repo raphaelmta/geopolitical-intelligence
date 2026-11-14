@@ -91,3 +91,55 @@ func CheckSearchMatchesRebuild(t *testing.T, ctx context.Context, pool *pgxpool.
 		t.Errorf("live search tables differ from a from-scratch rebuild (- rebuild, + live):%s", d)
 	}
 }
+
+// searchGoldenQuery renders the live search tables for the golden file,
+// without anything that depends on surrogate ids. search_rank breaks ties by
+// entity id (ORDER BY grau DESC, name_norm, id), so it is replaced by the
+// rank of the row's tie group: the first rank of all rows, over the three
+// ranked tables, with the same grau and name_norm, and the size of that
+// group. Both are id-independent and pin today's order of the groups.
+const searchGoldenQuery = `WITH s AS (
+		SELECT 'search_company' AS t, search_rank, entity_id, 'C'::"char" AS kind, name_norm, grau, tokens FROM search_company
+		UNION ALL SELECT 'search_person', search_rank, entity_id, kind, name_norm, grau, tokens FROM search_person
+		UNION ALL SELECT 'search_other', search_rank, entity_id, kind, name_norm, grau, tokens FROM search_other
+	), g AS (
+		SELECT s.*, min(search_rank) OVER w AS tie_first, count(*) OVER w AS tie_size
+		FROM s WINDOW w AS (PARTITION BY grau, name_norm)
+	)
+	SELECT g.t, 'tie ' || g.tie_first || '+' || g.tie_size || E'\t' || coalesce(ce.k, '~') || E'\t' || g.kind::text
+		|| E'\t' || coalesce(g.name_norm, '~') || E'\t' || g.grau || E'\t' || coalesce(g.tokens::text, '~')
+	FROM g LEFT JOIN c_ent ce ON ce.id = g.entity_id
+	UNION ALL
+	SELECT 'search_frequent_token', token || E'\t' || coalesce(ndoc::text, '~') FROM search_frequent_token`
+
+// SearchGolden returns the live search tables as golden sections (one per
+// table, named after it) in the id-independent form of searchGoldenQuery.
+func SearchGolden(ctx context.Context, pool *pgxpool.Pool) (map[string]string, error) {
+	out := map[string]string{"search_company": "", "search_person": "", "search_other": "", "search_frequent_token": ""}
+	err := withCanon(ctx, pool, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, searchGoldenQuery)
+		if err != nil {
+			return err
+		}
+		lines := map[string][]string{}
+		for rows.Next() {
+			var t, l string
+			if err := rows.Scan(&t, &l); err != nil {
+				return err
+			}
+			lines[t] = append(lines[t], l)
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		for t, ls := range lines {
+			sortStrings(ls)
+			out[t] = joinLines(ls)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("claimstest: search golden: %w", err)
+	}
+	return out, nil
+}

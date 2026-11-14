@@ -3,10 +3,11 @@
 # keep the final state must pass without rewriting it. Rewrite (-update or
 # UPDATE_GOLDEN=1) only for an intended difference, reviewed in this diff.
 # first load interrupted after the third relationship chunk, then repeated
-# masked: relationship first collection (depends on how claims are cut into chunks)
-# sha256 862d642e03f014a13e5a7509679a6ff3a9228534f2dce7d47dd741c4647199f2
+# masked: first collection of the relationships written by the interrupted edition (depends on how claims are cut into chunks)
+# sha256 d3e66642d5b85b293acfefa86fb355f3d987ba44fa3ee302ed593b548da26637
 # collection                        2 lines  sha256 f74aad05862323bf19a63277b2578e420534722bb112fe67d08f27ac8d9ea3f9
 # collection_file                   6 lines  sha256 4018016b8ef2542465515c84502cf53ef1b3117e428411922166e6366b216868
+# collection_file_url               6 lines  sha256 e69dc1faf86b946de380406df7baa66528b2fbbf01ce35d4a23e0c87d40f1f00
 # company_version                  29 lines  sha256 04dbad70fcc3ad873f9a613f7aeb83ca45b8ffaca3a931f368f49068f450e642
 # entity                           70 lines  sha256 0145baa6a6db41009242091fb699054d592d27e09195099280bde285fa77dd18
 # identity_ambiguous_key            0 lines  sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
@@ -16,6 +17,10 @@
 # person_entity_without_records     3 lines  sha256 ec8ed5ac92381eab09d43078e3c6fc031820c230f321e945c2e9d5b5e854a054
 # person_record                    39 lines  sha256 e4434b552bcefca161589c0e43bb0fe6b02596d8db6c30d0642f32e714e78dc3
 # relationship                     77 lines  sha256 aae5e8189773900393a118fdb5df51162158c3e0e5898c026dd0b0c947234405
+# search_company                   30 lines  sha256 a1579abc9ae1da7f0029cff87ba5f2de3b63c8611fd38fc3f7aee9568e980f59
+# search_frequent_token             0 lines  sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+# search_other                      1 lines  sha256 8025778931aae40b56957b97f7528d798f02176aa5b439d0957683ffa2b7a932
+# search_person                    34 lines  sha256 88e29f02eb1a7ea2f37ceb1d13a9149c58edc369421143dc6fc368660c4983de
 == collection ==
 receita@2041-01-01#1	failed	{"full": true}
 receita@2041-01-01#2	done	{"full": true}
@@ -26,6 +31,13 @@ receita@2041-01-01#1	Socios.csv	raw/receita/2041-01-01/Socios0.zip
 receita@2041-01-01#2	Empresas.csv	raw/receita/2041-01-01/Empresas0.zip
 receita@2041-01-01#2	Estabelecimentos.csv	raw/receita/2041-01-01/Estabelecimentos0.zip
 receita@2041-01-01#2	Socios.csv	raw/receita/2041-01-01/Socios0.zip
+== collection_file_url ==
+receita@2041-01-01#1	Empresas.csv	http://127.0.0.1:1/unused/2041-01/Empresas0.zip
+receita@2041-01-01#1	Estabelecimentos.csv	http://127.0.0.1:1/unused/2041-01/Estabelecimentos0.zip
+receita@2041-01-01#1	Socios.csv	http://127.0.0.1:1/unused/2041-01/Socios0.zip
+receita@2041-01-01#2	Empresas.csv	http://127.0.0.1:1/unused/2041-01/Empresas0.zip
+receita@2041-01-01#2	Estabelecimentos.csv	http://127.0.0.1:1/unused/2041-01/Estabelecimentos0.zip
+receita@2041-01-01#2	Socios.csv	http://127.0.0.1:1/unused/2041-01/Socios0.zip
 == company_version ==
 company:00000000	BANCO DO BRASIL SA	2038	05	DF	9701	6422100	02	120000000000.00	receita@2041-01-01#1	receita@2041-01-01#2	~	Empresas.csv:1
 company:98990001	ALFA PARTICIPAÇÕES S.A.	2054	05	RJ	6001	4711302	02	50000000.00	receita@2041-01-01#1	receita@2041-01-01#2	~	Empresas.csv:2
@@ -258,3 +270,72 @@ partner_of	person[receita|98990027|CINTIA GUEDES|141516]	company:98990027	receit
 partner_of	person[receita|98990027|DEBORA HOLANDA|]	company:98990027	receita|98990027|DEBORA HOLANDA|	~	{"role": "22"}	fact	~	2019-09-19	~	~	*	Socios.csv:49	receita@2041-01-01#2	~
 partner_of	person[receita|98990028|DEBORA HOLANDA|161718]	company:98990028	receita|98990028|DEBORA HOLANDA|161718	~	{"role": "49"}	fact	~	2019-09-19	~	~	*	Socios.csv:38	receita@2041-01-01#2	~
 partner_of	person[receita|98AB0001|IGOR NASCIMENTO|012345]	company:98AB0001	receita|98AB0001|IGOR NASCIMENTO|012345	~	{"role": "49"}	fact	~	2026-08-01	~	~	*	Socios.csv:19	receita@2041-01-01#2	~
+== search_company ==
+tie 1+1	company:98990001	C	ALFA PARTICIPACOES S.A.	5	'alfa' 'participacoes'
+tie 10+1	company:98990009	C	ZETA IMPORTACAO E EXPORTACAO LTDA	4	'exportacao' 'importacao' 'zeta'
+tie 11+1	company:98990005	C	BETA SERVICOS DE ENGENHARIA LTDA	3	'beta' 'engenharia' 'servicos'
+tie 12+1	company:98990008	C	EPSILON AGROPECUARIA LTDA	3	'agropecuaria' 'epsilon'
+tie 13+1	company:98AB0001	C	ETA TECNOLOGIA LTDA	3	'eta' 'tecnologia'
+tie 14+1	company:98990012	C	IOTA EDUCACAO INFANTIL LTDA	3	'educacao' 'infantil' 'iota'
+tie 15+1	company:98990017	C	NI SUPERMERCADOS S.A.	3	'ni' 'supermercados'
+tie 16+1	company:98990027	C	OMEGA MERCEARIA LTDA	3	'mercearia' 'omega'
+tie 18+1	company:98990026	C	PSI COMUNICACAO LTDA	3	'comunicacao' 'psi'
+tie 19+1	company:98990020	C	RO SOFTWARE LTDA	3	'ro' 'software'
+tie 20+1	company:98990021	C	SIGMA AUTO PECAS LTDA	3	'auto' 'pecas' 'sigma'
+tie 21+1	company:98990028	C	AGATA JOIAS LTDA	2	'agata' 'joias'
+tie 22+1	company:98990003	C	ALFA COMERCIO DE ALIMENTOS LTDA	2	'alfa' 'alimentos' 'comercio'
+tie 25+1	company:98990016	C	ASSOCIACAO DE MORADORES DO BAIRRO NOVO	2	'associacao' 'bairro' 'moradores' 'novo'
+tie 27+1	company:98990013	C	CAPA MATERIAIS DE CONSTRUCAO LTDA	2	'capa' 'construcao' 'materiais'
+tie 3+1	company:98990018	C	OMICRON LOGISTICA LTDA	5	'logistica' 'omicron'
+tie 39+1	company:98990014	C	LAMBDA CONSULTORIA LTDA	2	'consultoria' 'lambda'
+tie 4+1	company:98990002	C	ALFA INVESTIMENTOS LTDA	4	'alfa' 'investimentos'
+tie 43+1	company:98990004	C	PADARIA SOL NASCENTE LTDA	2	'nascente' 'padaria' 'sol'
+tie 48+1	company:98990011	C	TETA COMERCIO "BOA VISTA" LTDA	2	'boa' 'comercio' 'teta' 'vista'
+tie 5+1	company:98990007	C	DELTA CONFECCOES LTDA	4	'confeccoes' 'delta'
+tie 6+1	company:98990024	C	FI CAFE E RESTAURANTE LTDA	4	'cafe' 'fi' 'restaurante'
+tie 60+1	company:98999999	C	OMEGA HOLDING DO BRASIL LTDA	1	'brasil' 'holding' 'omega'
+tie 62+1	company:00000000	C	BANCO DO BRASIL SA	0	'banco' 'brasil'
+tie 63+1	company:98990015	C	MARIA FICTICIA DE SOUZA 00011122233	0	'ficticia' 'maria' 'souza'
+tie 64+1	company:98990019	C	PI ODONTOLOGIA LTDA	0	'odontologia' 'pi'
+tie 65+1	company:98990022	C	TAU REFORMAS LTDA	0	'reformas' 'tau'
+tie 7+1	company:98990006	C	GAMA TRANSPORTES LTDA	4	'gama' 'transportes'
+tie 8+1	company:98990023	C	IPSILON PAPELARIA LTDA	4	'ipsilon' 'papelaria'
+tie 9+1	company:98990025	C	QUI CLINICA VETERINARIA LTDA	4	'clinica' 'qui' 'veterinaria'
+== search_frequent_token ==
+== search_other ==
+tie 41+1	foreign:receita:98990001:NORTHWIND HOLDINGS LIMITED	E	NORTHWIND HOLDINGS LIMITED	2	'holdings' 'limited' 'northwind'
+== search_person ==
+tie 17+1	person[receita|98990012|PATRICIA MENDES|678901]	P	PATRICIA MENDES	3	'mendes' 'patricia'
+tie 2+1	person[receita|98990001|JOSE CONCEICAO BRANDAO|123456;receita|98990003|JOSE CONCEICAO BRANDAO|123456;receita|98990005|JOSE CONCEICAO BRANDAO|123456]	P	JOSE CONCEICAO BRANDAO	5	'brandao' 'conceicao' 'jose'
+tie 23+1	person[receita|98990002|ANA LUCIA PEREIRA|234567]	P	ANA LUCIA PEREIRA	2	'ana' 'lucia' 'pereira'
+tie 24+1	person[receita|98990004|ANTONIO MARCOS RIBEIRO|345678]	P	ANTONIO MARCOS RIBEIRO	2	'antonio' 'marcos' 'ribeiro'
+tie 26+1	person[receita|98990025|BRUNO FARIAS|121314]	P	BRUNO FARIAS	2	'bruno' 'farias'
+tie 28+3	person[receita|98990018|CARLA REPETIDA FICTICIA|700001]	P	CARLA REPETIDA FICTICIA	2	'carla' 'ficticia' 'repetida'
+tie 28+3	person[receita|98990023|CARLA REPETIDA FICTICIA|700002]	P	CARLA REPETIDA FICTICIA	2	'carla' 'ficticia' 'repetida'
+tie 28+3	person[receita|98990025|CARLA REPETIDA FICTICIA|700003]	P	CARLA REPETIDA FICTICIA	2	'carla' 'ficticia' 'repetida'
+tie 31+1	person[receita|98990027|CINTIA GUEDES|141516]	P	CINTIA GUEDES	2	'cintia' 'guedes'
+tie 32+1	person[receita|98990028|DEBORA HOLANDA|161718]	P	DEBORA HOLANDA	2	'debora' 'holanda'
+tie 33+1	person[receita|98990006|FERNANDO DIAS LOPES|789012]	P	FERNANDO DIAS LOPES	2	'dias' 'fernando' 'lopes'
+tie 34+1	person[receita|98990008|GABRIELA MOURA|890123]	P	GABRIELA MOURA	2	'gabriela' 'moura'
+tie 35+1	person[receita|98990009|HELENA CASTRO|901234]	P	HELENA CASTRO	2	'castro' 'helena'
+tie 36+1	person[receita|98AB0001|IGOR NASCIMENTO|012345]	P	IGOR NASCIMENTO	2	'igor' 'nascimento'
+tie 37+1	person[receita|98990011|JULIANA PRADO|135791]	P	JULIANA PRADO	2	'juliana' 'prado'
+tie 38+1	person[receita|98990013|KLEBER ANDRADE|246802]	P	KLEBER ANDRADE	2	'andrade' 'kleber'
+tie 40+1	person[receita|98990012|LUCAS HENRIQUE MENDES|567890]	P	LUCAS HENRIQUE MENDES	2	'henrique' 'lucas' 'mendes'
+tie 42+1	person[receita|98990016|OSVALDO QUEIROZ|223344]	P	OSVALDO QUEIROZ	2	'osvaldo' 'queiroz'
+tie 44+1	person[receita|98990017|RENATA VIEIRA|334455]	P	RENATA VIEIRA	2	'renata' 'vieira'
+tie 45+1	person[receita|98990026|ROBERTO DOADOR FICTICIO|555666]	P	ROBERTO DOADOR FICTICIO	2	'doador' 'ficticio' 'roberto'
+tie 46+1	person[receita|98990018|SERGIO UCHOA|445566]	P	SERGIO UCHOA	2	'sergio' 'uchoa'
+tie 47+1	person[receita|98990014|SIMONE TAVARES|112233]	P	SIMONE TAVARES	2	'simone' 'tavares'
+tie 49+1	person[receita|98990020|VALERIA ZANETTI|667788]	P	VALERIA ZANETTI	2	'valeria' 'zanetti'
+tie 50+1	person[receita|98990021|WAGNER BARROS|778899]	P	WAGNER BARROS	2	'barros' 'wagner'
+tie 51+1	person[receita|98990023|YARA CORDEIRO|889900]	P	YARA CORDEIRO	2	'cordeiro' 'yara'
+tie 52+1	person[receita|98990024|ZELIA DUARTE|990011]	P	ZELIA DUARTE	2	'duarte' 'zelia'
+tie 53+1	person[receita|98990024|ALVARO ESTEVES|101112]	P	ALVARO ESTEVES	1	'alvaro' 'esteves'
+tie 54+1	person[receita|98990005|BEATRIZ GONCALVES|456789]	P	BEATRIZ GONCALVES	1	'beatriz' 'goncalves'
+tie 55+2	person[receita|98990021|CARLA REPETIDA FICTICIA|700001]	P	CARLA REPETIDA FICTICIA	1	'carla' 'ficticia' 'repetida'
+tie 55+2	person[receita|98990024|CARLA REPETIDA FICTICIA|700002]	P	CARLA REPETIDA FICTICIA	1	'carla' 'ficticia' 'repetida'
+tie 57+1	person[receita|98990001|CARLOS ALBERTO FICTICIO|654321]	P	CARLOS ALBERTO FICTICIO	1	'alberto' 'carlos' 'ficticio'
+tie 58+1	person[receita|98990027|DEBORA HOLANDA|]	P	DEBORA HOLANDA	1	'debora' 'holanda'
+tie 59+1	person[receita|98990026|LUCIA DOADORA EXEMPLO|888999]	P	LUCIA DOADORA EXEMPLO	1	'doadora' 'exemplo' 'lucia'
+tie 61+1	person[receita|98990018|TANIA XAVIER|556677]	P	TANIA XAVIER	1	'tania' 'xavier'

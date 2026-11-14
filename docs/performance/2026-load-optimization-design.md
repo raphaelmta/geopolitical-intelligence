@@ -241,14 +241,28 @@ section 7.
   `UPDATE_GOLDEN=1`). Each scenario runs the worker's path (Load,
   CloseUnseen, Resolve, search refresh, through `connector.Collect`) twice,
   the second time with every id sequence moved forward: both dumps must be
-  identical. After each run the live search tables are compared row for row
-  (ids replaced by identities) with a from-scratch rebuild started from
-  empty tables (`CheckSearchMatchesRebuild`, for task 5). The dump reads
-  "last seen" only through `claimstest.LastSeen` (task 9). Two scenarios
-  interrupted *between* relationship chunks mask the relationships' first
-  collection, the one field that depends on how claims are cut into chunks
-  (task 2). TSE has no slice and no shrink guard (not a snapshot source):
-  those scenarios exist for Receita only.
+  identical. The live search tables are part of the golden, with
+  `search_rank` replaced by the first rank and size of its tie group (ties
+  are broken by entity id), so a change to the rebuild itself is compared
+  with today's output; after each run they are also compared row for row
+  with a from-scratch rebuild started from empty tables
+  (`CheckSearchMatchesRebuild`, for task 5). The dump reads "last seen" only
+  through `claimstest.LastSeen` (task 9). Three scenarios interrupted
+  *between* relationship chunks mask the first collection of the
+  relationships written by the interrupted edition (and its repeat), the one
+  field that depends on how claims are cut into chunks (task 2, and a
+  parallel load later). TSE has no slice and no shrink guard (not a snapshot
+  source): those scenarios exist for Receita only. Two Receita scenarios
+  cover what task 3 moves: a proposal that goes obsolete and reopens and
+  one whose records and `connections` shrink (`proposal_lifecycle`), and
+  analyst decisions between an interrupted load and its repeat.
+  **Mutation check** (to repeat when the test itself changes): break one
+  thing at a time, run `make test PKG=./internal/connector/receita
+  RUN=TestEquivalence`, read the failure, revert. It must fail on (1) a
+  claim no longer written (e.g. `AND false` on the legal_rep_of branch of
+  `sqlRels`), (2) a changed confidence (the resolver's `1e5` divisor), (3)
+  a search refresh that skips a needed rebuild; and it must pass on an
+  order-only change (relationship chunks processed in reverse order).
 
 ### Task 2 — Range-ordered relationship chunks
 

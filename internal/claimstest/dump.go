@@ -23,6 +23,7 @@ import (
 const (
 	SecCollection        = "collection"
 	SecCollectionFile    = "collection_file"
+	SecCollectionFileURL = "collection_file_url"
 	SecEntity            = "entity"
 	SecEmptyPersons      = "person_entity_without_records"
 	SecPersonRecord      = "person_record"
@@ -49,7 +50,10 @@ func LastSeen(alias string) string {
 //   - c_rec: a person record's key, source|context_key|name_norm|cpf_fragment;
 //   - c_ent: an entity's identity: kind:natural_key, or for a person the
 //     sorted keys of its records, person[k1;k2]; a person entity without
-//     records is "person-without-records:<name_norm>" (empty = true);
+//     records is "person-without-records:<name_norm>" (empty = true). A
+//     non-person entity without natural key (none is written today) would be
+//     kind~name_norm~name, which two such entities with the same name share:
+//     add a natural attribute here if a connector starts writing them;
 //   - c_col: a collection's identity, source@reference_date#n, n numbering
 //     the collections of one source and date in creation order;
 //   - c_dec: an identity decision's identity, kind/action/[sorted record keys].
@@ -64,7 +68,7 @@ var canonTables = []string{
 			CASE WHEN r.keys IS NOT NULL THEN 'person[' || r.keys || ']'
 				WHEN e.natural_key IS NOT NULL THEN e.kind || ':' || e.natural_key
 				WHEN e.kind = 'person' THEN 'person-without-records:' || e.name_norm
-				ELSE e.kind || '~' || e.name_norm END AS k,
+				ELSE e.kind || '~' || e.name_norm || '~' || e.name END AS k,
 			e.kind = 'person' AND r.keys IS NULL AS empty
 		FROM entity e
 		LEFT JOIN (SELECT p.entity_id, string_agg(c.k, ';' ORDER BY c.k COLLATE "C") AS keys
@@ -110,11 +114,26 @@ func recordKeys(arr string) string {
 // (byte order), so neither physical order nor the collation matters. Every
 // reference to another row goes through c_rec, c_ent, c_col or c_dec.
 var sectionQueries = map[string]string{
+	// Columns of collection left out, on purpose:
+	//   - started_at, finished_at: timestamps of the run;
+	//   - stats: the loader's counters, which a faster path may legitimately
+	//     change (rows seen or re-pointed per step) without changing claims;
+	//   - error: its text names internal steps and buckets (it would change
+	//     with task 2's chunks); status says that a collection failed;
+	//   - observed_date: for Receita it is fixed by Pipeline (ref +
+	//     ObservedAfter) and visible in every closure's valid_to_before; for
+	//     TSE it is the day the test runs (raised to the reference date), not
+	//     a property of the code.
 	SecCollection: `SELECT ` + line("c.k", "x.status", "x.scope") + `
 		FROM collection x JOIN c_col c ON c.id = x.id`,
-	// sha256 and size are left out: they describe the fixture's zip bytes
-	// (archive/zip output), not what the loader did.
+	// sha256 and size_bytes are left out: they describe the fixture's zip
+	// bytes (archive/zip output, which a Go release may change), not what
+	// the loader did.
 	SecCollectionFile: `SELECT ` + line("c.k", "f.name", "f.raw_key") + `
+		FROM collection_file f JOIN c_col c ON c.id = f.collection_id`,
+	// source_url (migration 0018) in a section of its own, added after the
+	// first goldens were recorded (so collection_file kept its text).
+	SecCollectionFileURL: `SELECT ` + line("c.k", "f.name", "f.source_url") + `
 		FROM collection_file f JOIN c_col c ON c.id = f.collection_id`,
 	SecEntity: `SELECT ` + line("ce.k", "e.kind", "e.natural_key", "e.name", "e.name_norm") + `
 		FROM entity e JOIN c_ent ce ON ce.id = e.id WHERE NOT ce.empty`,
@@ -129,7 +148,7 @@ var sectionQueries = map[string]string{
 		LEFT JOIN c_ent ce ON ce.id = p.entity_id
 		LEFT JOIN c_dec cd ON cd.id = p.locked_by_decision_id
 		JOIN c_col cc ON cc.id = p.first_collection_id`,
-	// Field order is relied on by MaskRelationshipFirstCollection.
+	// Field order is relied on by MaskFirstCollectionOf.
 	SecRelationship: `SELECT ` + line("r.rel_type", "se.k", "de.k", "sr.k", "dr.k", "r.attrs", "r.kind", "r.confidence",
 		"r.valid_from", "r.valid_to_after", "r.valid_to_before", "fc.k", "r.record_ref", "ls.k", "cl.k") + `
 		FROM relationship r
