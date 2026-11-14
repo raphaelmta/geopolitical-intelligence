@@ -1,7 +1,12 @@
 /** What the edge tags mean; shown wherever edges are listed. */
 export function EdgeLegend() {
   return (
-    <aside className="legend" aria-label="Legenda">
+    <details className="fold">
+      <summary>
+        <span className="fold__title">Como ler as etiquetas</span>{' '}
+        <span className="muted small">fato, inferência, identidade e vencido</span>
+      </summary>
+      <aside className="legend" aria-label="Legenda">
       <p>
         <span className="tag tag--fact">
           <span className="edge-line edge-line--solid" aria-hidden="true" />
@@ -19,6 +24,7 @@ export function EdgeLegend() {
         <span className="tag tag--stale">vencido</span> a fonte passou do prazo de atualização.
         Clique em “fonte” para ver de onde veio cada vínculo.
       </p>
-    </aside>
+      </aside>
+    </details>
   );
 }

@@ -5,6 +5,7 @@ import { apiGet } from '../api/client';
 import { mayCarryCPF } from '../api/cpf';
 import type { SearchResponse } from '../api/types';
 import { kindLabel, naturalKeyLabel, usefulLength } from '../api/format';
+import { KindIcon } from '../components/KindIcon';
 import { ErrorNotice } from '../components/ErrorNotice';
 import { usePageHeading } from '../usePageHeading';
 
@@ -189,7 +190,7 @@ export function SearchPage() {
                 </p>
               )
             ) : (
-              <table className="table">
+              <table className="table table--card table--results">
                 <caption>
                   {cpfSearch && onlyCandidates ? 'Pessoas candidatas para “' : 'Resultados para “'}
                   {q}” ({result.data.items.length}
@@ -205,8 +206,10 @@ export function SearchPage() {
                 <tbody>
                   {result.data.items.map((item) => (
                     <tr key={item.id}>
-                      <td>{kindLabel(item.kind)}</td>
-                      <td>
+                      <td className="cell-kind">
+                        <KindIcon kind={item.kind} /> {kindLabel(item.kind)}
+                      </td>
+                      <td className="cell-name">
                         <Link to={`/entidade/${encodeURIComponent(item.id)}`}>{item.name}</Link>
                         {item.match === 'cpf_fragment' && (
                           <>

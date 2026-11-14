@@ -28,8 +28,12 @@ export function createGraph(container: HTMLElement, callbacks: GraphCallbacks): 
     highlight: vi.fn<(id: string | null) => void>(),
     restyle: vi.fn<() => void>(),
     fit: vi.fn<() => void>(),
+    setEdgeLabels: vi.fn<(mode: 'auto' | 'all') => void>(),
+    zoom: vi.fn<(factor: number) => void>(),
+    arrange: vi.fn<() => void>(),
+    resize: vi.fn<() => void>(),
     destroy: vi.fn<() => void>(),
-    snapshot: () => ({ ids: [], highlighted: [], positions: {} }),
+    snapshot: () => ({ ids: [], highlighted: [], labelled: [], positions: {} }),
   };
   graphs.push({
     container,

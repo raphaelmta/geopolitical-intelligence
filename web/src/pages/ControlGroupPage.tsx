@@ -10,9 +10,10 @@ import { EdgeLegend } from '../components/EdgeLegend';
 import { EdgeTable, EntityLink, HighlightButton, edgeDetails, useScrollIntoView } from '../components/EdgeTable';
 import { ProvenancePopover } from '../components/ProvenancePopover';
 import { ErrorNotice } from '../components/ErrorNotice';
+import { GraphDetails } from '../components/GraphDetails';
 import { GraphPanel } from '../components/GraphView';
 import { JobProgress } from '../components/JobProgress';
-import { edgeElementId, toElements } from '../components/graphStyle';
+import { edgeElementId, entitiesOf, toElements } from '../components/graphStyle';
 import { usePageHeading } from '../usePageHeading';
 
 const ID = /^[1-9]\d{0,17}$/;
@@ -174,6 +175,7 @@ function GroupResult({
     () => toElements(edges, [result.root, ...controllers], result.root.id),
     [edges, result.root, controllers],
   );
+  const entities = useMemo(() => entitiesOf(edges, [result.root, ...controllers]), [edges, result.root, controllers]);
   const [shown, setShown] = useState(MEMBERS_STEP);
   const levels = useMemo(() => {
     const sorted = [...members].sort((x, y) => x.depth - y.depth);
@@ -213,6 +215,19 @@ function GroupResult({
         elements={elements}
         selectedId={selected}
         onSelect={onSelect}
+        details={
+          <GraphDetails
+            edges={edges}
+            entities={entities}
+            selected={selected}
+            onSelect={onSelect}
+            actions={(n) => (
+              <Link className="button button--small" to={`/entidade/${encodeURIComponent(n.id)}`}>
+                Abrir página
+              </Link>
+            )}
+          />
+        }
       />
 
       <section className="section" aria-labelledby={hm}>

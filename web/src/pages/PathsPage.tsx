@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
-import { useSearchParams } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { apiGet } from '../api/client';
 import { useJobRunner } from '../api/jobs';
@@ -10,11 +10,12 @@ import { EdgeLegend } from '../components/EdgeLegend';
 import { EdgePeriod, EntityLink, HighlightButton, edgeDetails, useScrollIntoView } from '../components/EdgeTable';
 import { EntityPicker } from '../components/EntityPicker';
 import { ErrorNotice } from '../components/ErrorNotice';
+import { GraphDetails } from '../components/GraphDetails';
 import { GraphPanel } from '../components/GraphView';
 import { JobProgress } from '../components/JobProgress';
 import { ProvenancePopover } from '../components/ProvenancePopover';
 import { RelTypeFilter } from '../components/RelTypeFilter';
-import { edgeElementId, toElements } from '../components/graphStyle';
+import { edgeElementId, entitiesOf, toElements } from '../components/graphStyle';
 import { identityMerged, pathHasDoubt } from '../api/edges';
 import { usePageHeading } from '../usePageHeading';
 
@@ -162,7 +163,10 @@ function PathsResultView({
   const paths = result.paths ?? [];
   const hubs = result.stopped_hubs ?? [];
   const union = useMemo(() => paths.flatMap((p) => p.map((h) => h.edge)), [paths]);
-  const elements = useMemo(() => toElements(union), [union]);
+  // The drawing reads left to right from the entity the paths start at.
+  const start = paths[0]?.[0] ? ends(paths[0][0])[0] : undefined;
+  const elements = useMemo(() => toElements(union, [], start?.id), [union, start?.id]);
+  const entities = useMemo(() => entitiesOf(union), [union]);
   const h = useId();
   return (
     <section className="section" aria-labelledby={h}>
@@ -199,7 +203,26 @@ function PathsResultView({
       )}
       {paths.length > 0 && (
         <>
-          <GraphPanel label="Gráfico dos caminhos encontrados" elements={elements} selectedId={selected} onSelect={onSelect} />
+          <GraphPanel
+            label="Gráfico dos caminhos encontrados"
+            elements={elements}
+            selectedId={selected}
+            onSelect={onSelect}
+            layout="flow"
+            details={
+              <GraphDetails
+                edges={union}
+                entities={entities}
+                selected={selected}
+                onSelect={onSelect}
+                actions={(n) => (
+                <Link className="button button--small" to={`/entidade/${encodeURIComponent(n.id)}`}>
+                  Abrir página
+                </Link>
+              )}
+              />
+            }
+          />
           {paths.map((p, i) => (
             <PathView key={i} hops={p} index={i} selected={selected} onSelect={onSelect} />
           ))}

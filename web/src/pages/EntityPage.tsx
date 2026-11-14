@@ -30,8 +30,10 @@ import { isClosed } from '../api/edges';
 import { EdgeBadge } from '../components/EdgeBadge';
 import { EdgeLegend } from '../components/EdgeLegend';
 import { ErrorNotice } from '../components/ErrorNotice';
+import { GraphDetails } from '../components/GraphDetails';
+import { KindIcon } from '../components/KindIcon';
 import { GraphPanel, graphStartsOpen } from '../components/GraphView';
-import { edgeElementId, entityIdOf, nodeElementId, toElements } from '../components/graphStyle';
+import { entityIdOf, nodeElementId, toElements } from '../components/graphStyle';
 import { MergeDialog, SplitDialog } from '../components/IdentityDialogs';
 import { ProvenancePopover } from '../components/ProvenancePopover';
 import { Timeline } from '../components/Timeline';
@@ -141,29 +143,38 @@ function Entity({ id }: { id: string }) {
   return (
     <article className="entity">
       <header className="entity__head">
-        <p className="eyebrow">{kindLabel(entity.kind)}</p>
-        <h1 ref={h1} tabIndex={-1}>
-          {entity.name}
-        </h1>
-        {key && (
-          <p className="entity__key">
-            {entity.kind === 'company' ? 'CNPJ básico ' : 'Chave '}
-            <span className="mono">{key}</span>
-          </p>
-        )}
+        <KindIcon kind={entity.kind} size="large" />
+        <div>
+          <p className="eyebrow">{kindLabel(entity.kind)}</p>
+          <h1 ref={h1} tabIndex={-1}>
+            {entity.name}
+          </h1>
+          {key && (
+            <p className="entity__key">
+              {entity.kind === 'company' ? 'CNPJ básico ' : 'Chave '}
+              <span className="mono">{key}</span>
+            </p>
+          )}
+        </div>
       </header>
 
       <nav className="explore" aria-label="Explorar">
         <ul className="explore__list">
           <li>
-            <Link to={`/mapa/${encodeURIComponent(id)}`}>Ver no mapa</Link>
+            <Link className="button button--primary" to={`/mapa/${encodeURIComponent(id)}`}>
+              Ver no mapa
+            </Link>
           </li>
           <li>
-            <Link to={`/caminhos?a=${encodeURIComponent(id)}`}>Caminhos a partir daqui</Link>
+            <Link className="button" to={`/caminhos?a=${encodeURIComponent(id)}`}>
+              Caminhos a partir daqui
+            </Link>
           </li>
           {entity.kind === 'company' && (
             <li>
-              <Link to={`/grupo/${encodeURIComponent(id)}`}>Grupo de controle</Link>
+              <Link className="button" to={`/grupo/${encodeURIComponent(id)}`}>
+                Grupo de controle
+              </Link>
             </li>
           )}
         </ul>
@@ -492,9 +503,6 @@ function ConnectionsSection({ entity }: { entity: EntityRef }) {
     const id = entityIdOf(elementId);
     if (id != null && id !== entity.id) navigate(`/entidade/${encodeURIComponent(id)}`);
   };
-  const selectedId = selected != null ? entityIdOf(selected) : null;
-  const selectedNode = selectedId != null ? nodes.get(selectedId) : undefined;
-  const selectedEdge = selected != null && selectedId == null ? edges.find((e) => edgeElementId(e.relationship_id) === selected) : undefined;
 
   let body: ReactNode;
   if (q.isPending) {
@@ -523,7 +531,7 @@ function ConnectionsSection({ entity }: { entity: EntityRef }) {
             </>
           )}
         </p>
-        <p className="small">
+        <p className="small skip-inline">
           <button type="button" className="link-button" onClick={() => afterRef.current?.focus()}>
             Pular o mapa
           </button>
@@ -531,34 +539,41 @@ function ConnectionsSection({ entity }: { entity: EntityRef }) {
         <GraphPanel
           className="graph-panel--embedded"
           label={`Mapa de conexões de ${entity.name}: ${nodes.size} entidades e ${edges.length} vínculos`}
-          hint="Clique para destacar; duplo clique ou “Abrir” para ir à página. Pelo teclado, use a lista “Entidades no mapa” logo abaixo: “destacar” marca o nó no gráfico e “Abrir” vai à página. As tabelas de vínculos têm tudo o que o mapa mostra."
+          hint="Clique numa entidade ou numa linha para ver os detalhes ao lado; duplo clique numa entidade abre a página dela. Arraste para mover, role para aproximar. As tabelas de vínculos abaixo têm tudo o que o gráfico mostra."
           elements={elements}
           selectedId={selected}
           onSelect={setSelected}
           onActivate={open}
+          onClear={() => setSelected(null)}
+          details={
+            <GraphDetails
+              edges={edges}
+              entities={nodes}
+              selected={selected}
+              onSelect={setSelected}
+              actions={(n) =>
+                n.id === entity.id ? (
+                  <Link className="button button--small" to={mapLink}>
+                    Explorar no mapa completo
+                  </Link>
+                ) : (
+                  <>
+                    <Link
+                      className="button button--primary button--small"
+                      to={`/entidade/${encodeURIComponent(n.id)}`}
+                      aria-label={`Abrir a página de ${n.name}`}
+                    >
+                      Abrir página
+                    </Link>
+                    <Link className="button button--small" to={`/mapa/${encodeURIComponent(n.id)}`} aria-label={`mapa a partir de ${n.name}`}>
+                      Mapa a partir daqui
+                    </Link>
+                  </>
+                )
+              }
+            />
+          }
         />
-        <div className="connections__selected" aria-live="polite">
-          {selectedNode && selectedNode.id !== entity.id && (
-            <p>
-              Destacado: {selectedNode.name} <span className="muted small">· {kindLabel(selectedNode.kind)}</span> ·{' '}
-              <Link to={`/entidade/${encodeURIComponent(selectedNode.id)}`} aria-label={`Abrir ${selectedNode.name}`}>
-                Abrir
-              </Link>{' '}
-              ·{' '}
-              <Link to={`/mapa/${encodeURIComponent(selectedNode.id)}`} aria-label={`mapa a partir de ${selectedNode.name}`}>
-                mapa
-              </Link>
-            </p>
-          )}
-          {selectedEdge && (
-            <p>
-              Destacado: {relationTypeName(selectedEdge.type)} entre{' '}
-              <Link to={`/entidade/${encodeURIComponent(selectedEdge.src.id)}`}>{selectedEdge.src.name}</Link> e{' '}
-              <Link to={`/entidade/${encodeURIComponent(selectedEdge.dst.id)}`}>{selectedEdge.dst.name}</Link>{' '}
-              <EdgeBadge edge={selectedEdge} />
-            </p>
-          )}
-        </div>
         <details className="connections__nodes">
           <summary>Entidades no mapa ({nodes.size - 1})</summary>
           <ul className="plain-list">

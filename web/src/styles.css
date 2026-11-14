@@ -2,15 +2,20 @@
 
 :root {
   color-scheme: light dark;
-  --bg: #f7f6f2;
+  --bg: #f4f5f7;
   --surface: #ffffff;
-  --text: #1b1f24;
-  --muted: #555c66;
-  --line: #d6d3cb;
-  --line-strong: #8a8f98;
-  --accent: #1f4e79;
+  --surface-2: #f0f2f5;
+  --text: #1a1f26;
+  --muted: #56606c;
+  --line: #dde1e6;
+  --line-strong: #8a929c;
+  --accent: #17508a;
+  --accent-soft: #e6eef7;
   --accent-text: #ffffff;
-  --link: #1a4f86;
+  --link: #17508a;
+  --edge: #7b848f;
+  --radius: 10px;
+  --shadow: 0 1px 2px rgb(20 30 45 / 6%), 0 4px 14px rgb(20 30 45 / 5%);
   --focus: #b35c00;
   --fact: #1b1f24;
   --inference: #6b3fa0;
@@ -21,11 +26,11 @@
   --error-line: #b3261e;
   --selected-bg: #fdf3e3;
   /* Graph nodes by entity kind (shape tells the kind too) */
-  --node-person: #2f6f9f;
-  --node-company: #3d7a4a;
-  --node-party: #a0452f;
-  --node-public-body: #6a5d2b;
-  --node-foreign: #5b5f66;
+  --node-person: #2a6fb0;
+  --node-company: #2f8559;
+  --node-party: #b8492f;
+  --node-public-body: #8a6a12;
+  --node-foreign: #6c5a9c;
   --font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', 'Liberation Sans', sans-serif;
   --serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;
   --mono: ui-monospace, 'SFMono-Regular', 'Cascadia Mono', 'DejaVu Sans Mono', Menlo, Consolas, monospace;
@@ -33,8 +38,12 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #15181c;
+    --bg: #14171b;
     --surface: #1d2126;
+    --surface-2: #262b32;
+    --accent-soft: #24384d;
+    --edge: #8d96a1;
+    --shadow: 0 1px 2px rgb(0 0 0 / 30%), 0 4px 14px rgb(0 0 0 / 25%);
     --text: #e8e6e1;
     --muted: #a6adb7;
     --line: #353b43;
@@ -55,7 +64,7 @@
     --node-company: #86c493;
     --node-party: #e39a85;
     --node-public-body: #cdbb7a;
-    --node-foreign: #aab0b8;
+    --node-foreign: #b9a9e6;
   }
 }
 
@@ -1343,4 +1352,723 @@ li.is-selected {
   * {
     transition: none !important;
   }
+}
+
+/* ───────────────────────── Friendlier shell and graph ─────────────────────────
+   Later rules of the same weight win: this block restyles what is above
+   without repeating it. */
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+h2 {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+h4 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+html.no-scroll {
+  overflow: hidden;
+}
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  box-shadow: 0 1px 0 var(--line);
+  border-bottom: 0;
+}
+
+.site-header__inner,
+.page {
+  max-width: 76rem;
+}
+
+.page:has(.map) {
+  max-width: 100rem;
+}
+
+.brand {
+  font-family: var(--font);
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.brand__mark {
+  width: 1.5rem;
+  height: 1.5rem;
+  color: var(--accent);
+}
+
+.nav {
+  gap: 0.25rem;
+}
+
+.nav a {
+  display: block;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+}
+
+.nav a:hover {
+  background: var(--surface-2);
+  text-decoration: none;
+}
+
+.nav a.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.button,
+input,
+select {
+  border-radius: 8px;
+}
+
+.button {
+  text-decoration: none;
+  color: var(--text);
+  border-color: var(--line);
+  font-weight: 550;
+  box-shadow: 0 1px 1px rgb(20 30 45 / 5%);
+}
+
+.button:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-2);
+}
+
+.button--primary,
+.button--primary:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.button--primary:hover {
+  filter: brightness(1.1);
+}
+
+/* Entity kinds: one glyph and one color each, in the drawing and outside it */
+
+.kind-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 50%;
+  background: var(--line-strong);
+  color: var(--surface);
+  vertical-align: middle;
+}
+
+.kind-icon svg {
+  width: 60%;
+  height: 60%;
+  fill: currentColor;
+  stroke: currentColor;
+  stroke-width: 0;
+}
+
+.kind-icon--small {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.kind-icon--large {
+  width: 2.75rem;
+  height: 2.75rem;
+}
+
+.kind-icon--person {
+  background: var(--node-person);
+}
+
+.kind-icon--company {
+  background: var(--node-company);
+}
+
+.kind-icon--party {
+  background: var(--node-party);
+}
+
+.kind-icon--public_body {
+  background: var(--node-public-body);
+}
+
+.kind-icon--foreign {
+  background: var(--node-foreign);
+}
+
+/* Folded blocks (filters, legends) */
+
+.fold {
+  margin: 1rem 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.fold > summary {
+  padding: 0.6rem 1rem;
+  cursor: pointer;
+}
+
+.fold > summary:hover {
+  background: var(--surface-2);
+  border-radius: var(--radius);
+}
+
+.fold__title {
+  font-weight: 600;
+}
+
+.fold > :not(summary) {
+  margin: 0;
+  padding: 0.25rem 1rem 1rem;
+  border: 0;
+  background: none;
+}
+
+/* Graph */
+
+.graph-panel {
+  margin: 1rem 0 1.5rem;
+}
+
+.graph-panel__bar {
+  justify-content: space-between;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+}
+
+.graph-panel__hint {
+  flex: 1 1 auto;
+  max-width: 62rem;
+}
+
+.graph-panel__bar .button {
+  flex: none;
+}
+
+.graph-panel__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  margin-top: 0.6rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.graph-panel__body--details {
+  grid-template-columns: minmax(0, 1fr) 22rem;
+}
+
+.graph-view {
+  position: relative;
+  min-width: 0;
+  margin: 0;
+}
+
+.graph-view__canvas,
+.graph-view__loading {
+  height: min(74vh, 48rem);
+  min-height: 26rem;
+  border: 0;
+}
+
+/* A faint dotted ground, so moving and zooming the drawing is felt. */
+.graph-view__canvas {
+  background-color: var(--surface);
+  background-image: radial-gradient(var(--line) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+.graph-view__loading {
+  margin: 0;
+}
+
+.graph-panel--embedded .graph-view__canvas,
+.graph-panel--embedded .graph-view__loading {
+  height: 30rem;
+}
+
+.graph-placeholder {
+  height: auto;
+  min-height: calc(30rem + 8rem);
+  border-radius: var(--radius);
+}
+
+.graph-tools {
+  position: absolute;
+  top: 0.6rem;
+  left: 0.6rem;
+  right: 0.6rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  pointer-events: none;
+}
+
+.graph-tools > * {
+  pointer-events: auto;
+}
+
+.graph-tools__button {
+  font: inherit;
+  font-size: 0.85rem;
+  min-width: 2rem;
+  height: 2rem;
+  padding: 0 0.5rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgb(20 30 45 / 10%);
+  cursor: pointer;
+}
+
+.graph-tools__button:not(.graph-tools__button--text) {
+  font-size: 1.1rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.graph-tools__button:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-2);
+}
+
+.graph-tools__button[aria-pressed='true'] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.graph-tools__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  height: 2rem;
+  padding: 0 0.6rem;
+  font-size: 0.85rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgb(20 30 45 / 10%);
+}
+
+.graph-tools__check input {
+  min-height: 0;
+  margin: 0;
+}
+
+.graph-tools__check label {
+  margin: 0;
+  font-weight: 400;
+  font-size: inherit;
+}
+
+.graph-tip {
+  position: absolute;
+  z-index: 3;
+  max-width: 20rem;
+  padding: 0.3rem 0.55rem;
+  transform: translate(-50%, calc(-100% - 1.6rem));
+  background: var(--text);
+  color: var(--surface);
+  border-radius: 6px;
+  font-size: 0.82rem;
+  line-height: 1.3;
+  pointer-events: none;
+  overflow-wrap: anywhere;
+}
+
+.graph-details {
+  min-width: 0;
+  max-height: min(74vh, 48rem);
+  padding: 1rem;
+  overflow: auto;
+  border-left: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+
+.graph-panel--embedded .graph-details {
+  max-height: 30rem;
+}
+
+.graph-details p {
+  margin: 0.25rem 0;
+}
+
+.graph-details__head {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.graph-details__title {
+  font-size: 1.05rem;
+  line-height: 1.3;
+}
+
+.graph-details__key {
+  margin: 0.15rem 0 0;
+}
+
+.graph-details__pair {
+  display: grid;
+  gap: 0.35rem;
+  font-weight: 600;
+}
+
+.graph-details__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.85rem 0 0;
+}
+
+.graph-details__sub {
+  margin: 1.1rem 0 0.4rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.graph-details__links {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.92rem;
+}
+
+.graph-details__links li {
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.graph-details__links li:last-child {
+  border-bottom: 0;
+}
+
+.graph-details__links .link-button {
+  text-align: left;
+}
+
+.graph-details__relation {
+  color: var(--muted);
+}
+
+.graph-details__links--cards {
+  margin-top: 0.75rem;
+}
+
+.graph-details__links--cards li {
+  margin-bottom: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.graph-details__links--cards li:last-child {
+  border-bottom: 1px solid var(--line);
+}
+
+.graph-details__links--cards li.is-selected {
+  border-color: var(--focus);
+}
+
+.graph-details__idle {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.graph-details__idle .graph-details__title {
+  color: var(--text);
+}
+
+.graph-details__idle ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.graph-details__idle li {
+  margin: 0.4rem 0;
+}
+
+.graph-legend {
+  gap: 0.35rem 2rem;
+  margin-top: 0.6rem;
+  color: var(--muted);
+}
+
+.legend-line--fact,
+.legend-line--closed,
+.legend-line--multiple {
+  color: var(--edge);
+}
+
+.legend-line--multiple {
+  border-top-width: 4px;
+}
+
+.legend-plus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  border: 1.5px solid var(--muted);
+  border-radius: 50%;
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* The full-window view of the drawing */
+
+.graph-panel--full .graph-panel__body {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+.graph-panel--full .graph-view__canvas,
+.graph-panel--full .graph-view__loading {
+  height: 100vh;
+  height: 100dvh;
+  max-height: none;
+}
+
+.graph-panel--full .graph-details {
+  max-height: 100vh;
+  max-height: 100dvh;
+}
+
+.map__summary {
+  margin: 1rem 0 0;
+}
+
+@media (max-width: 62rem) {
+  .graph-panel__body--details {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .graph-details {
+    max-height: 20rem;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+
+  .graph-panel--full .graph-view__canvas {
+    height: 62vh;
+    height: 62dvh;
+  }
+
+  .graph-panel--full .graph-details {
+    max-height: 38vh;
+    max-height: 38dvh;
+  }
+}
+
+@media (max-width: 40rem) {
+  .graph-view__canvas,
+  .graph-view__loading,
+  .graph-panel--embedded .graph-view__canvas,
+  .graph-panel--embedded .graph-view__loading {
+    height: 24rem;
+    min-height: 0;
+  }
+
+  .graph-placeholder {
+    min-height: 0;
+  }
+
+  .graph-panel__bar {
+    flex-wrap: wrap;
+  }
+}
+
+/* Pages */
+
+.entity__head {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.entity__head h1 {
+  margin-bottom: 0.35rem;
+  overflow-wrap: anywhere;
+}
+
+.entity__head .kind-icon {
+  margin-top: 0.35rem;
+}
+
+.explore__list {
+  gap: 0.5rem;
+}
+
+.map__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.5rem 0 0;
+}
+
+/* Reachable by keyboard, out of the way of the mouse */
+.skip-inline:not(:focus-within) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.connections__nodes {
+  padding: 0.5rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.connections__nodes summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.legend {
+  border-radius: var(--radius);
+  line-height: 2.1;
+}
+
+.help,
+.notice,
+.path,
+.proposal,
+.source-card,
+.filters,
+.checks,
+.modes {
+  border-radius: var(--radius);
+}
+
+.help summary {
+  padding: 0.15rem 0;
+}
+
+/* Tables as cards */
+
+.table-wrap,
+.table--card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.table-wrap {
+  box-shadow: var(--shadow);
+}
+
+.table {
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: var(--radius);
+}
+
+.table caption {
+  padding: 0.75rem 0.9rem 0.5rem;
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 650;
+  caption-side: top;
+}
+
+.table th {
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+  border-top: 1px solid var(--line);
+  font-size: 0.75rem;
+}
+
+.table tbody tr:last-child > td {
+  border-bottom: 0;
+}
+
+.table tbody tr:hover > td {
+  background: var(--surface-2);
+}
+
+.table tbody tr.is-selected > td,
+.table tbody tr.is-selected:hover > td {
+  background: var(--selected-bg);
+}
+
+.cell-kind {
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.cell-kind .kind-icon {
+  margin-right: 0.35rem;
+}
+
+.cell-name a {
+  font-weight: 600;
+}
+
+/* Search */
+
+.search {
+  padding: 1rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.search__field input {
+  min-height: 2.9rem;
+  font-size: 1.05rem;
+}
+
+.search .button {
+  min-height: 2.9rem;
+  padding-left: 1.4rem;
+  padding-right: 1.4rem;
+}
+
+.tag {
+  border-radius: 999px;
 }

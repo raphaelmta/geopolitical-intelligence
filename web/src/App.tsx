@@ -37,6 +37,12 @@ function Layout() {
       <header className="site-header">
         <div className="site-header__inner">
           <Link to="/" className="brand">
+            <svg className="brand__mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M6 7 18 5M6 7l6 11M18 5l-6 13" fill="none" stroke="currentColor" strokeWidth="1.6" />
+              <circle cx="6" cy="7" r="3.2" fill="currentColor" />
+              <circle cx="18" cy="5" r="2.6" fill="currentColor" />
+              <circle cx="12" cy="18" r="3.2" fill="currentColor" />
+            </svg>
             Bancada
           </Link>
           <nav aria-label="Principal">

@@ -7,6 +7,7 @@ import { formatDate, kindLabel, relationTypeName } from '../api/format';
 import { EdgeLegend } from '../components/EdgeLegend';
 import { EdgeTable, EntityLink, useScrollIntoView } from '../components/EdgeTable';
 import { ErrorNotice } from '../components/ErrorNotice';
+import { GraphDetails } from '../components/GraphDetails';
 import { GraphPanel } from '../components/GraphView';
 import { RelTypeFilter } from '../components/RelTypeFilter';
 import { entityIdOf, nodeElementId, toElements } from '../components/graphStyle';
@@ -147,7 +148,17 @@ function MapExplorer({ rootId, edgeLimit }: { rootId: number; edgeLimit: number 
   const capped = edges.length >= edgeLimit;
   const capNoteId = useId();
 
-  const elements = useMemo(() => toElements(edges, root ? [root] : [], rootId), [edges, root, rootId]);
+  // Entities drawn whose own links were not asked for yet: marked "+".
+  const collapsed = useMemo(() => {
+    const open = new Set(expanded);
+    const out = new Set<number>();
+    for (const e of edges) for (const end of [e.src, e.dst]) if (!open.has(end.id)) out.add(end.id);
+    return out;
+  }, [edges, expanded]);
+  const elements = useMemo(
+    () => toElements(edges, root ? [root] : [], rootId, { collapsed: capped ? undefined : collapsed }),
+    [edges, root, rootId, collapsed, capped],
+  );
 
   // Entities on screen, the starting one first.
   const nodes = useMemo(() => {
@@ -162,6 +173,7 @@ function MapExplorer({ rootId, edgeLimit }: { rootId: number; edgeLimit: number 
     }
     return [...m.values()];
   }, [edges, root]);
+  const entities = useMemo(() => new Map(nodes.map((n) => [n.entity.id, n.entity])), [nodes]);
 
   const activate = (elementId: string) => {
     const nodeId = entityIdOf(elementId);
@@ -192,18 +204,25 @@ function MapExplorer({ rootId, edgeLimit }: { rootId: number; edgeLimit: number 
         <h1 ref={h1} tabIndex={-1}>
           {title}
         </h1>
-        <p>
-          <Link to={`/entidade/${encodeURIComponent(rootId)}`}>Abrir a página da entidade</Link> ·{' '}
-          <Link to={`/caminhos?a=${encodeURIComponent(rootId)}`}>Caminhos a partir daqui</Link>
+        <p className="map__links">
+          <Link className="button button--small" to={`/entidade/${encodeURIComponent(rootId)}`}>
+            Abrir a página da entidade
+          </Link>
+          <Link className="button button--small" to={`/caminhos?a=${encodeURIComponent(rootId)}`}>
+            Caminhos a partir daqui
+          </Link>
         </p>
       </header>
 
-      <FilterForm value={filters} onApply={setFilters} />
-      <p className="muted small" role="status">
-        {describeFilters(filters)}
-      </p>
-
-      <EdgeLegend />
+      <details className="fold">
+        <summary>
+          <span className="fold__title">Filtros</span>{' '}
+          <span className="muted small" role="status">
+            {describeFilters(filters)}
+          </span>
+        </summary>
+        <FilterForm value={filters} onApply={setFilters} />
+      </details>
 
       {capped && (
         <div className="notice" role="alert" id={capNoteId}>
@@ -225,13 +244,53 @@ function MapExplorer({ rootId, edgeLimit }: { rootId: number; edgeLimit: number 
         <p className="empty">Nenhum vínculo com estes filtros.</p>
       )}
 
+      <p className="map__summary">
+        <strong>{nodes.length}</strong> {nodes.length === 1 ? 'entidade' : 'entidades'} e <strong>{edges.length}</strong>{' '}
+        {edges.length === 1 ? 'vínculo' : 'vínculos'} no mapa
+        {collapsed.size > 0 && !capped && (
+          <span className="muted">
+            {' '}
+            · {collapsed.size} {collapsed.size === 1 ? 'entidade ainda pode' : 'entidades ainda podem'} ser expandidas
+          </span>
+        )}
+      </p>
+
       <GraphPanel
         label={`Mapa de vínculos de ${entity.data.entity.name}: ${nodes.length} entidades e ${edges.length} vínculos`}
         elements={elements}
         selectedId={selected}
         onSelect={setSelected}
         onActivate={activate}
+        onClear={() => setSelected(null)}
+        expandable={collapsed.size > 0 && !capped}
+        details={
+          <GraphDetails
+            edges={edges}
+            entities={entities}
+            selected={selected}
+            onSelect={setSelected}
+            actions={(n) => (
+              <>
+                {collapsed.has(n.id) && !capped && (
+                  <button type="button" className="button button--primary button--small" onClick={() => expand(n.id)}>
+                    Trazer vínculos
+                  </button>
+                )}
+                <Link className="button button--small" to={`/entidade/${encodeURIComponent(n.id)}`}>
+                  Abrir página
+                </Link>
+                {n.id !== rootId && (
+                  <Link className="button button--small" to={`/mapa/${encodeURIComponent(n.id)}`}>
+                    Mapa a partir daqui
+                  </Link>
+                )}
+              </>
+            )}
+          />
+        }
       />
+
+      <EdgeLegend />
 
       <section className="section" aria-label="Entidades">
         <div className="table-wrap">

@@ -1,30 +1,46 @@
 // The only module that runs Cytoscape against the DOM (tests replace it:
 // jsdom has no canvas). It keeps the drawing in step with a list of
-// elements, adding and removing by id so an expansion never redraws the
-// whole map from scratch.
+// elements, adding and removing by id, and moves the nodes to the positions
+// of graphLayout (animated, so an expansion is seen growing out of the node
+// that was expanded).
 import cytoscape from 'cytoscape';
 import { graphStylesheet, readPalette, type GraphElement } from './graphStyle';
+import { computeLayout, type LayoutMode } from './graphLayout';
 
 export interface GraphCallbacks {
-  /** A node or edge was clicked/tapped. */
+  /** A node or line was clicked/tapped (a line answers with its first relationship). */
   onSelect(elementId: string): void;
   /** A node was double-clicked (expand it). */
   onActivate(elementId: string): void;
+  /** The empty background was clicked: nothing is selected any more. */
+  onClear?(): void;
+  /** The pointer is over an element (its tip, at a point of the canvas), or left it (null). */
+  onHover?(tip: { text: string; x: number; y: number } | null): void;
 }
 
 export interface GraphSnapshot {
   ids: string[];
   highlighted: string[];
+  labelled: string[];
   positions: Record<string, { x: number; y: number }>;
 }
+
+/** Whether the words on the lines are drawn: "auto" = only on small drawings. */
+export type EdgeLabels = 'auto' | 'all';
 
 export interface GraphHandle {
   setElements(elements: GraphElement[]): void;
   /** Marks one element (and brings it into view), or clears the mark. */
   highlight(elementId: string | null): void;
+  setEdgeLabels(mode: EdgeLabels): void;
   /** Re-reads the theme colors (light/dark change). */
   restyle(): void;
   fit(): void;
+  zoom(factor: number): void;
+  /** Puts every node back in its computed place (after dragging). */
+  arrange(): void;
+  /** The container changed size. */
+  resize(): void;
   destroy(): void;
   /** Element ids, highlighted ids and node positions (for tests and debugging). */
   snapshot(): GraphSnapshot;
@@ -45,160 +61,239 @@ function placeStylesheetPlaceholder() {
   document.head.appendChild(marker);
 }
 
-/** Above this many nodes the force layout (cose) is too slow for the main thread. */
-const COSE_MAX_NODES = 300;
+/** With more lines than this, "auto" keeps the words for the pointer and the selection. */
+export const AUTO_LABEL_EDGES = 28;
+const PADDING = 56;
+/** Below this zoom the names can no longer be read. */
+const READABLE_ZOOM = 0.5;
+/** A drawing of two or three nodes is not blown up to fill the canvas. */
+const MAX_FIT_ZOOM = 1.2;
 
-/** headless: no renderer (tests; jsdom has no canvas). */
+export interface GraphOptions {
+  /** No renderer (tests; jsdom has no canvas). */
+  headless?: boolean;
+  layout?: LayoutMode;
+}
+
 export function createGraph(
   container: HTMLElement,
   callbacks: GraphCallbacks,
-  { headless = false }: { headless?: boolean } = {},
+  { headless = false, layout: mode = 'radial' }: GraphOptions = {},
 ): GraphHandle {
   placeStylesheetPlaceholder();
   const cy = cytoscape({
     ...(headless ? { headless: true, styleEnabled: true } : { container }),
     style: graphStylesheet(readPalette()),
     elements: [],
-    minZoom: 0.05,
-    maxZoom: 4,
+    minZoom: 0.08,
+    maxZoom: 3,
     boxSelectionEnabled: false,
     selectionType: 'single',
   });
-  cy.on('tap', 'node, edge', (e) => callbacks.onSelect(e.target.id()));
-  cy.on('dbltap', 'node', (e) => callbacks.onActivate(e.target.id()));
 
-  let layout: cytoscape.Layouts | null = null;
   let highlighted: string | null = null;
+  let hovered: string | null = null;
+  let labels: EdgeLabels = 'auto';
+  let first = true;
+  /** Relationship element id → id of the line that stands for it. */
+  const lineOf = new Map<string, string>();
 
-  const cose = (n: number, randomize: boolean, fit: boolean): cytoscape.LayoutOptions => ({
-    name: 'cose',
-    animate: false,
-    randomize,
-    fit,
-    padding: 24,
-    numIter: n <= 100 ? 1000 : 300,
-    coolingFactor: n <= 100 ? 0.99 : 0.95,
-  });
+  const resolve = (id: string | null) => (id == null ? null : (lineOf.get(id) ?? id));
 
-  /** First drawing: lay out everything and fit it to the screen. */
-  const layoutAll = () => {
-    layout?.stop();
-    const n = cy.nodes().length;
-    layout = cy.layout(
-      n <= COSE_MAX_NODES
-        ? cose(n, true, true)
-        : // Large maps: a cheap layout (one pass), most connected in the middle.
-          {
-            name: 'concentric',
-            animate: false,
-            fit: true,
-            padding: 24,
-            minNodeSpacing: 8,
-            concentric: (node: cytoscape.NodeSingular) => node.degree(false),
-            levelWidth: () => 4,
-          },
-    );
-    layout.run();
+  /** Fades what is not next to the hovered (else the selected) element and decides the words. */
+  const emphasise = () => {
+    const focus = resolve(hovered) ?? resolve(highlighted);
+    const el = focus ? cy.getElementById(focus) : cy.collection();
+    cy.batch(() => {
+      cy.elements().removeClass('faded near');
+      if (el.nonempty()) {
+        // a node with what touches it, or a line with its two ends
+        const near = around(el);
+        cy.elements().difference(near).addClass('faded');
+        near.edges().addClass('near');
+      }
+      const all = labels === 'all' || cy.edges().length <= AUTO_LABEL_EDGES;
+      cy.edges().forEach((e) => {
+        e.toggleClass('labelled', all || e.hasClass('near'));
+      });
+    });
   };
+
+  /** The selection being made comes from a click on the drawing: the view stays where it is. */
+  let tapping = false;
+  cy.on('tap', 'node, edge', (e) => {
+    tapping = true;
+    callbacks.onSelect(e.target.id());
+    // the highlight arrives in an effect of the page; let it see the flag
+    setTimeout(() => {
+      tapping = false;
+    }, 100);
+  });
+  cy.on('tap', (e) => {
+    if (e.target === cy) callbacks.onClear?.();
+  });
+  cy.on('dbltap', 'node', (e) => callbacks.onActivate(e.target.id()));
+  cy.on('mouseover', 'node, edge', (e) => {
+    hovered = e.target.id();
+    emphasise();
+    const tip = e.target.data('tip') as string | undefined;
+    if (tip) callbacks.onHover?.({ text: tip, x: e.renderedPosition.x, y: e.renderedPosition.y });
+  });
+  cy.on('mouseout', 'node, edge', () => {
+    hovered = null;
+    emphasise();
+    callbacks.onHover?.(null);
+  });
+  cy.on('viewport', () => callbacks.onHover?.(null));
+
+  let running: cytoscape.Layouts | null = null;
+  /**
+   * After an expansion: everything, when everything still reads at that
+   * size; otherwise what just arrived and what it hangs from.
+   */
+  const fitZoom = (eles: cytoscape.CollectionReturnValue) => {
+    const bb = eles.boundingBox();
+    return Math.min((cy.width() - 2 * PADDING) / Math.max(bb.w, 1), (cy.height() - 2 * PADDING) / Math.max(bb.h, 1));
+  };
+
+  /** Brings a set of elements into view, never blown up past MAX_FIT_ZOOM. */
+  const show = (eles: cytoscape.CollectionReturnValue, duration: number) => {
+    if (eles.empty()) return;
+    const zoom = Math.max(cy.minZoom(), Math.min(fitZoom(eles), MAX_FIT_ZOOM));
+    const bb = eles.boundingBox();
+    const pan = { x: cy.width() / 2 - zoom * (bb.x1 + bb.w / 2), y: cy.height() / 2 - zoom * (bb.y1 + bb.h / 2) };
+    cy.stop();
+    if (headless || duration === 0) cy.viewport({ zoom, pan });
+    else cy.animate({ zoom, pan, duration, easing: 'ease-out' });
+  };
+
+  const around = (el: cytoscape.CollectionReturnValue) =>
+    el.nodes().closedNeighborhood().union(el.edges()).union(el.edges().connectedNodes());
 
   /**
-   * An expansion: nodes already on screen keep their positions (locked while
-   * the force layout settles the new ones) and the viewport does not move.
-   * Large maps skip the force layout: new nodes stay on their ring.
+   * After an expansion: everything, when everything still reads at that
+   * size; otherwise what just arrived and what it hangs from.
    */
-  const layoutNew = (fresh: cytoscape.NodeCollection) => {
-    const n = cy.nodes().length;
-    if (n > COSE_MAX_NODES) return;
-    layout?.stop();
-    const old = cy.nodes().difference(fresh).nodes().filter((node) => !node.locked());
-    old.lock();
-    layout = cy.layout(cose(n, false, false));
-    layout.one('layoutstop', () => old.unlock());
-    layout.run();
+  const frame = (fresh: cytoscape.NodeCollection) => {
+    const all = cy.elements();
+    show(fitZoom(all) >= READABLE_ZOOM || fresh.empty() ? all : fresh.closedNeighborhood(), 320);
   };
 
-  /** Ring positions for new nodes around the node already on screen they hang from. */
-  const ringPositions = (fresh: GraphElement[]) => {
-    const byAnchor = new Map<string, string[]>();
-    const anchored = new Set<string>();
-    for (const e of fresh) {
-      if (e.group !== 'edges') continue;
-      for (const [a, b] of [
-        [e.data.source!, e.data.target!],
-        [e.data.target!, e.data.source!],
-      ] as const) {
-        if (anchored.has(b) || cy.getElementById(b).nonempty() || cy.getElementById(a).empty()) continue;
-        anchored.add(b);
-        byAnchor.set(a, [...(byAnchor.get(a) ?? []), b]);
-      }
-    }
-    const out = new Map<string, cytoscape.Position>();
-    for (const [a, ids] of byAnchor) {
-      const p = cy.getElementById(a).position();
-      const r = 90 + ids.length * 4;
-      ids.forEach((id, i) => {
-        const t = (2 * Math.PI * i) / ids.length;
-        out.set(id, { x: p.x + r * Math.cos(t), y: p.y + r * Math.sin(t) });
-      });
-    }
-    return out;
+  const place = (animate: boolean, fresh?: cytoscape.NodeCollection) => {
+    const root = cy.nodes('.root').first();
+    const positions = computeLayout(
+      cy.nodes().map((n) => n.id()),
+      cy.edges().map((e) => [e.source().id(), e.target().id()] as [string, string]),
+      root.nonempty() ? root.id() : undefined,
+      mode,
+    );
+    running?.stop();
+    running = cy.layout({
+      name: 'preset',
+      positions: (node: cytoscape.NodeSingular) => positions[node.id()] ?? node.position(),
+      fit: false,
+      padding: PADDING,
+      animate: animate && !headless,
+      animationDuration: 320,
+      animationEasing: 'ease-out',
+    } as cytoscape.LayoutOptions);
+    running.one('layoutstop', () => (fresh ? frame(fresh) : show(cy.elements(), animate ? 200 : 0)));
+    running.run();
   };
 
   const mark = (id: string | null) => {
     cy.elements('.highlighted').removeClass('highlighted');
     highlighted = id;
-    if (!id) return;
-    const el = cy.getElementById(id);
-    if (el.empty()) return;
-    el.addClass('highlighted');
-    const bb = el.boundingBox();
-    const ext = cy.extent();
-    if (bb.x1 < ext.x1 || bb.x2 > ext.x2 || bb.y1 < ext.y1 || bb.y2 > ext.y2) cy.center(el);
+    const el = id ? cy.getElementById(resolve(id)!) : cy.collection();
+    if (el.nonempty()) {
+      el.addClass('highlighted');
+      const bb = el.boundingBox();
+      const ext = cy.extent();
+      const outside = bb.x1 < ext.x1 || bb.x2 > ext.x2 || bb.y1 < ext.y1 || bb.y2 > ext.y2;
+      // Chosen in a list while the drawing is too small to read (or looking
+      // elsewhere): go to it and what touches it.
+      if (!tapping && (outside || cy.zoom() < READABLE_ZOOM)) {
+        show(around(el), 280);
+      }
+    }
+    emphasise();
   };
 
   return {
     setElements(elements) {
       const want = new Map(elements.map((e) => [e.data.id, e]));
+      let changed = false;
       let added = cy.collection();
       cy.batch(() => {
-        cy.elements()
-          .filter((el) => !want.has(el.id()))
-          .remove();
+        const gone = cy.elements().filter((el) => !want.has(el.id()));
+        if (gone.nonempty()) changed = true;
+        gone.remove();
         const fresh: GraphElement[] = [];
         for (const e of elements) {
           const el = cy.getElementById(e.data.id);
           if (el.empty()) fresh.push(e);
-          else el.classes(e.classes);
+          else {
+            // keep the classes this module owns
+            const own = ['highlighted', 'faded', 'near', 'labelled'].filter((c) => el.hasClass(c));
+            el.classes([e.classes, ...own].join(' '));
+            el.data(e.data);
+          }
         }
         if (fresh.length === 0) return;
-        const placed = ringPositions(fresh);
+        changed = true;
+        // A new node starts where the node it hangs from is, and grows out of it.
+        const start = new Map<string, cytoscape.Position>();
+        for (const e of fresh) {
+          if (e.group !== 'edges') continue;
+          for (const [a, b] of [
+            [e.data.source!, e.data.target!],
+            [e.data.target!, e.data.source!],
+          ] as const) {
+            const anchor = cy.getElementById(a);
+            if (anchor.nonempty() && !start.has(b)) start.set(b, { ...anchor.position() });
+          }
+        }
         added = cy.add(
           fresh.map((e) => ({
             group: e.group,
             data: e.data,
             classes: e.classes,
-            ...(e.group === 'nodes' && placed.has(e.data.id) ? { position: placed.get(e.data.id)! } : {}),
+            ...(e.group === 'nodes' && start.has(e.data.id) ? { position: start.get(e.data.id)! } : {}),
           })),
         );
       });
-      const freshNodes = added.nodes();
-      // A first drawing (or one where at most the starting node was kept,
-      // as after a filter change) is laid out whole and fitted.
-      if (freshNodes.nonempty()) {
-        if (cy.nodes().length - freshNodes.length <= 1) layoutAll();
-        else layoutNew(freshNodes);
+      lineOf.clear();
+      for (const e of elements) for (const m of e.data.members ?? []) lineOf.set(m, e.data.id);
+      if (changed && cy.nodes().nonempty()) {
+        place(!first, first ? undefined : added.nodes());
+        first = false;
       }
       mark(highlighted);
     },
     highlight: mark,
+    setEdgeLabels(m) {
+      labels = m;
+      emphasise();
+    },
     restyle() {
       cy.style().fromJson(graphStylesheet(readPalette())).update();
     },
     fit() {
-      cy.fit(undefined, 24);
+      show(cy.elements(), 200);
+    },
+    zoom(factor) {
+      const level = Math.min(cy.maxZoom(), Math.max(cy.minZoom(), cy.zoom() * factor));
+      cy.zoom({ level, renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } });
+    },
+    arrange() {
+      place(true);
+    },
+    resize() {
+      cy.resize();
+      show(cy.elements(), 0);
     },
     destroy() {
-      layout?.stop();
+      running?.stop();
       cy.destroy();
     },
     snapshot() {
@@ -209,6 +304,7 @@ export function createGraph(
       return {
         ids: cy.elements().map((el) => el.id()).sort(),
         highlighted: cy.elements('.highlighted').map((el) => el.id()),
+        labelled: cy.edges('.labelled').map((el) => el.id()).sort(),
         positions,
       };
     },
