@@ -495,6 +495,51 @@ section 7.
   catalogue test; task 1.
 - **Risk.** Low. **Gain.** Guard cost per updated row 16–18 µs → 3.5–5 µs:
   about 65 s of the 442 s in-memory re-load (−15 %); little on a first load.
+- **Implemented** (migration `0023_cheap_update_guards.sql`; tests in
+  `internal/db/guards_test.go`, microbenchmark in
+  `internal/db/guards_bench_test.go`). One difference from the approach
+  above: **one trigger per table, not three, and it still calls
+  `guard_update`.** `<table>_guard_update` is replaced in place (`CREATE OR
+  REPLACE TRIGGER`, same name, same function, same allow-list arguments) and
+  gains a `WHEN` clause that is a pure pre-filter: true whenever
+  `guard_update` could refuse the row — (a) `ROW(OLD.c…) IS DISTINCT FROM
+  ROW(NEW.c…)` over every column off the allow-list, generated from the
+  catalogue by `install_update_guard(table, allow-list)`; (b) reopening; (c)
+  `last_seen_collection_id` set to NULL or decreasing; (d)
+  `update_guard_columns_changed(table, columns)`, true when the table's
+  columns are no longer those (a) was generated for. A row that passes the
+  clause runs the original function, so refusals, the order of the checks,
+  messages and SQLSTATE are identical by construction; a row that fails it
+  would have passed (each type's equality agrees with the jsonb comparison
+  for the types of these tables). **Default-deny at run time for a column
+  added later**, not only in CI: (d) makes every row of such a table go
+  through `guard_update` again, so the new column is immutable exactly as
+  before (and `TestUpdateGuardsDenyByDefault` of `internal/claims` passes
+  unchanged); `TestUpdateGuardCatalogue` fails until a migration decides the
+  column (`SELECT install_update_guard(…)`, with the column on the allow-list
+  if it may change). (d) is declared `IMMUTABLE` although it reads
+  `pg_attribute`, on purpose: the planner folds it once per statement
+  (trigger `WHEN` clauses are prepared at each execution, never cached), not
+  once per row — pinned by `TestUpdateGuardFastPath` (function statistics:
+  0 calls of `guard_update` and 1 column check for a "seen" update of every
+  row; one `guard_update` call per row once a column is unguarded). The
+  migration takes `SHARE ROW EXCLUSIVE` on the three tables for milliseconds
+  (catalogue only: no scan, no rewrite; reads continue); there is no moment
+  without a guard. Tests: `TestUpdateGuardCharacterisation` (written and
+  green on the old guard first: every column × no-op / change / NULL /
+  collection below, equal, above × never seen / seen / closed rows ×
+  owner, worker, API; combinations of allowed and forbidden columns; 435
+  updates per role), the same matrix with an unguarded column added,
+  `TestUpdateGuardMatchesTheOriginal` (9,004 single- and two-column updates,
+  outcome with the installed guard = outcome with the trigger of 0001 put
+  back in the transaction), the existing guard tests of `internal/claims`
+  and task 1's goldens, all unchanged. **Measured** (`make test
+  PKG='-bench BenchmarkUpdateGuard -benchtime 5x ./internal/db' RUN=NONE`,
+  test database with the small settings, 200 k rows, `UPDATE … SET
+  last_seen_collection_id` on every row, rolled back, 5 runs): relationship
+  53.2 µs/row with the original guard, 34.0 with the new one, 33.5 without
+  any guard — guard cost 19.7 → 0.5 µs/row; company_version 45.7 / 29.0 /
+  27.5 — 18.3 → 1.5 µs/row. The "seen" statements are 36–37 % faster.
 
 ### Task 5 — Search: skip when nothing changed, reuse what is already computed
 

@@ -20,7 +20,7 @@ import (
 // TEST_DATABASE_URL and returns a URL whose search_path points to it. The
 // schema is dropped when the test ends, so tests can run in parallel
 // packages against one server.
-func EmptySchemaURL(t *testing.T) string {
+func EmptySchemaURL(t testing.TB) string {
 	t.Helper()
 	base := os.Getenv("TEST_DATABASE_URL")
 	if base == "" {
@@ -64,7 +64,7 @@ func EmptySchemaURL(t *testing.T) string {
 }
 
 // DB returns a pool on a new, migrated schema that is dropped on Cleanup.
-func DB(t *testing.T) *pgxpool.Pool {
+func DB(t testing.TB) *pgxpool.Pool {
 	t.Helper()
 	ctx := context.Background()
 	u := EmptySchemaURL(t)
@@ -80,7 +80,7 @@ func DB(t *testing.T) *pgxpool.Pool {
 }
 
 // SeedSources inserts the rows of sources.All into the schema behind pool.
-func SeedSources(t *testing.T, pool *pgxpool.Pool) {
+func SeedSources(t testing.TB, pool *pgxpool.Pool) {
 	t.Helper()
 	if err := sources.Sync(context.Background(), pool); err != nil {
 		t.Fatalf("seed sources: %v", err)
