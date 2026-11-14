@@ -58,7 +58,15 @@ export function GraphPanel({ hint, className, details, expandable, ...props }: G
   useEffect(() => {
     if (!full) return;
     document.documentElement.classList.add('no-scroll');
-    return () => document.documentElement.classList.remove('no-scroll');
+    // Esc leaves it wherever the focus is (the canvas handles its own Esc).
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.defaultPrevented) setFull(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.documentElement.classList.remove('no-scroll');
+    };
   }, [full]);
 
   const classes = ['graph-panel', className, full ? 'graph-panel--full' : ''].filter(Boolean).join(' ');
