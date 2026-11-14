@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"geoint/internal/db"
+	"geoint/internal/testutil"
 )
 
 // Characterisation of the update guards of the three claim tables
@@ -764,6 +765,16 @@ func TestUpdateGuardCatalogue(t *testing.T) {
 		Scan(&workerExec, &apiExec, &workerInstall); err != nil {
 		t.Fatal(err)
 	}
+	var schemaOwned, workerSchema, apiSchema bool
+	if err := env.owner.QueryRow(roleCtx, `SELECT n.nspowner = (SELECT oid FROM pg_roles WHERE rolname = current_user),
+			has_schema_privilege('geoint_worker', 'geoint_guard', 'USAGE') OR has_schema_privilege('geoint_worker', 'geoint_guard', 'CREATE'),
+			has_schema_privilege('geoint_api', 'geoint_guard', 'USAGE') OR has_schema_privilege('geoint_api', 'geoint_guard', 'CREATE')
+		FROM pg_namespace n WHERE n.nspname = 'geoint_guard'`).Scan(&schemaOwned, &workerSchema, &apiSchema); err != nil {
+		t.Fatal(err)
+	}
+	if !schemaOwned || workerSchema || apiSchema {
+		t.Errorf("geoint_guard: owned by the owner %v (want true), worker/api privileges %v/%v (want none)", schemaOwned, workerSchema, apiSchema)
+	}
 	if !workerExec || !apiExec || workerInstall {
 		t.Errorf("EXECUTE: worker/api on update_guard_columns_changed %v/%v (want true), worker on install_update_guard %v (want false)",
 			workerExec, apiExec, workerInstall)
@@ -934,7 +945,7 @@ func TestDropColumnCascadeKeepsTheGuard(t *testing.T) {
 // uses can resolve to an object the worker created in the schema.
 func TestTriggerFunctionsPinSearchPath(t *testing.T) {
 	env := newRoleEnv(t)
-	rows, err := env.owner.Query(roleCtx, `SELECT p.oid::regprocedure::text, coalesce(array_to_string(p.proconfig, ' '), '')
+	rows, err := env.owner.Query(roleCtx, `SELECT p.oid::regprocedure::text, coalesce(p.proconfig, '{}')
 		FROM pg_proc p
 		WHERE p.pronamespace IN (current_schema()::regnamespace, 'geoint_guard'::regnamespace)
 			AND (p.prorettype IN ('trigger'::regtype, 'event_trigger'::regtype) OR p.prosecdef
@@ -943,7 +954,10 @@ func TestTriggerFunctionsPinSearchPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	type fn struct{ name, config string }
+	type fn struct {
+		name   string
+		config []string
+	}
 	fns, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (fn, error) {
 		var f fn
 		return f, r.Scan(&f.name, &f.config)
@@ -954,11 +968,98 @@ func TestTriggerFunctionsPinSearchPath(t *testing.T) {
 	if len(fns) < 9 {
 		t.Fatalf("only %d functions found: %v", len(fns), fns)
 	}
+	want := []string{"search_path=pg_catalog, pg_temp"}
 	for _, f := range fns {
-		if !slices.Contains(strings.Fields(f.config), "search_path=pg_catalog, pg_temp") &&
-			!strings.Contains(f.config, "search_path=pg_catalog, pg_temp") {
-			t.Errorf("%s runs with the caller's search_path (proconfig %q): add SET search_path = pg_catalog, pg_temp", f.name, f.config)
+		if !slices.Equal(f.config, want) {
+			t.Errorf("%s has proconfig %q, want exactly %q (SET search_path = pg_catalog, pg_temp)", f.name, f.config, want)
 		}
+	}
+}
+
+// TestEventTriggerRunsOnlyTheOwnersInstall: in the state `goose down` of
+// 0023 leaves (install_update_guard dropped, the 0001 triggers back, the
+// event trigger still serving other schemas), the worker plants an
+// install_update_guard(regclass, text[]) of its own; an ALTER TABLE by the
+// owner (a superuser) must not run it, and must say so (review N1).
+func TestEventTriggerRunsOnlyTheOwnersInstall(t *testing.T) {
+	env := newRoleEnv(t)
+	for _, sql := range []string{
+		`DROP FUNCTION install_update_guard(regclass, text[])`,
+		originalGuard("relationship"), originalGuard("person_record"), originalGuard("company_version"),
+	} {
+		if _, err := env.owner.Exec(roleCtx, sql); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+	}
+	// Without install_update_guard the event trigger leaves the schema alone.
+	addColumn(t, env.owner, "person_record", "before_plant text", false)
+
+	for _, sql := range []string{
+		`CREATE SEQUENCE planted_calls`,
+		// Schema-qualified: the caller's search_path may not reach it.
+		`CREATE FUNCTION install_update_guard(tbl regclass, a text[]) RETURNS void LANGUAGE plpgsql AS
+			$$BEGIN PERFORM nextval('` + env.schema + `.planted_calls'); END$$`,
+	} {
+		allowed(t, env.worker, sql)
+	}
+	for _, table := range guardedTables {
+		_, err := env.owner.Exec(roleCtx, "ALTER TABLE "+table+" ADD COLUMN after_plant text")
+		if err == nil || !strings.Contains(err.Error(), "is not run") || !strings.Contains(err.Error(), "geoint_worker") {
+			t.Errorf("%s: ALTER TABLE with a planted install_update_guard: %v, want a refusal naming it", table, err)
+		}
+	}
+	var called bool // a sequence is not rolled back with the ALTER
+	if err := env.owner.QueryRow(roleCtx, `SELECT is_called FROM planted_calls`).Scan(&called); err != nil {
+		t.Fatal(err)
+	}
+	if called {
+		t.Error("the worker's install_update_guard was executed by the owner's ALTER TABLE")
+	}
+}
+
+// TestMigrationIgnoresAPlantedInstall: an install_update_guard(text, text[])
+// the worker creates before 0023 is applied is not what the migration calls
+// for its string literals.
+func TestMigrationIgnoresAPlantedInstall(t *testing.T) {
+	u := testutil.EmptySchemaURL(t)
+	if err := db.MigrateTo(roleCtx, u, 22); err != nil {
+		t.Fatalf("migrate to 22: %v", err)
+	}
+	owner, err := db.Open(roleCtx, u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(owner.Close)
+	pw := map[string]string{db.WorkerRole: randomPassword(t), db.APIRole: randomPassword(t)}
+	if err := db.SetRolePasswords(roleCtx, owner, pw); err != nil {
+		t.Fatal(err)
+	}
+	worker := openAs(t, u, db.WorkerRole, pw[db.WorkerRole])
+	var schema string
+	if err := worker.QueryRow(roleCtx, `SELECT current_schema()`).Scan(&schema); err != nil {
+		t.Fatal(err)
+	}
+	for _, sql := range []string{
+		`CREATE SEQUENCE planted_calls`,
+		`CREATE FUNCTION install_update_guard(tbl text, a text[]) RETURNS void LANGUAGE plpgsql AS
+			$$BEGIN PERFORM nextval('` + schema + `.planted_calls'); END$$`,
+		`CREATE FUNCTION pg_advisory_xact_lock(integer) RETURNS void LANGUAGE plpgsql AS
+			$$BEGIN PERFORM nextval('` + schema + `.planted_calls'); END$$`,
+	} {
+		allowed(t, worker, sql)
+	}
+	if err := db.Migrate(roleCtx, u); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	var called bool
+	if err := owner.QueryRow(roleCtx, `SELECT is_called FROM planted_calls`).Scan(&called); err != nil {
+		t.Fatal(err)
+	}
+	if called {
+		t.Error("the migration executed a function the worker planted")
+	}
+	for _, p := range updateGuardProblems(t, owner, updateGuardAllow, decidedColumns()) {
+		t.Error(p)
 	}
 }
 

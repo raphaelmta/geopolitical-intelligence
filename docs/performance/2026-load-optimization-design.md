@@ -534,7 +534,31 @@ section 7.
   would leave the table without its guard (`DROP COLUMN … CASCADE` of a
   compared column) is refused; a migration that drops a column runs, in one
   transaction, `SET LOCAL geoint.update_guard_installing = 'on'`, the
-  `DROP COLUMN … CASCADE` and `install_update_guard`. Re-installing keeps the
+  `DROP COLUMN … CASCADE` and `install_update_guard`. Dropping or renaming a
+  column **on the allow-list** makes every later `ALTER TABLE` of the table
+  fail with "install_update_guard(<table>): the allow-list {…} must name
+  columns of the table": the event trigger re-installs with the allow-list
+  it reads from the trigger's arguments, which still names the old column.
+  That is fail-closed but cryptic; the remedy is the same three steps with
+  the new allow-list. The event trigger runs as the superuser owner who
+  issues the ALTER and calls `<schema>.install_update_guard`, in a schema
+  where the worker may `CREATE`: it calls it only when the function belongs
+  to the table's owner and to the event trigger's owner, and a function of
+  that signature owned by anyone else (planted, e.g. after `goose down` of
+  0023) makes the ALTER fail naming it, without running it
+  (`TestEventTriggerRunsOnlyTheOwnersInstall`). The migration's own calls
+  name exact argument types or `pg_catalog`, so a function the worker
+  planted before 0023 is not picked either
+  (`TestMigrationIgnoresAPlantedInstall`); `geoint_guard` must belong to the
+  migrating owner (checked) and grants nothing to anyone. Down drops
+  `install_update_guard` first and the event trigger with its schema once no
+  schema needs it; it keeps the pinned search_path. Known limits: a column
+  added later is compared with its type's `=`, so a type whose equality is
+  looser than its text (`interval`, a nondeterministic collation) or that has
+  none needs a decision before it is added; and an `ADD COLUMN` that reaches
+  a guarded table by recursion from a parent (after an owner-made `INHERIT` /
+  `ATTACH PARTITION`) is reported for the parent and does not re-install the
+  guard — the catalogue test catches both. Re-installing keeps the
   trigger's enabled state (`CREATE OR REPLACE TRIGGER` alone resets it to
   `O`; verified), and the catalogue test requires one state,
   `guardTriggerEnabled` (`O`; task 6 changes it to `A`). (d) only acts when
@@ -718,7 +742,15 @@ section 7.
      every user trigger of the schema — update guards, no-delete, no-truncate,
      immutability — becomes `ENABLE ALWAYS`, so that in replica mode **only
      PostgreSQL's internal foreign-key triggers stop firing**. A test fails
-     when any non-internal trigger is not `ALWAYS`.
+     when any non-internal trigger is not `ALWAYS`. Two things from task 4:
+     the update guards' expected state is the constant `guardTriggerEnabled`
+     of `internal/db/guards_test.go` (change it to `A`;
+     `install_update_guard` keeps whatever state it finds); and the event
+     trigger `geoint_update_guard_reinstall` is enabled in origin mode (`O`),
+     so it does **not** fire under `session_replication_role = replica`. Task
+     6 must decide: `ALTER EVENT TRIGGER … ENABLE ALWAYS`, or a rule (and a
+     test) that no session in replica mode runs DDL on a guarded table (only
+     the owner can, so the loaders cannot anyway).
   2. Loader helper `bulk(tx, statement, verify…)`: `SET LOCAL
      session_replication_role = replica`, run the statement, then run its
      verification queries **in the same transaction** — one anti-join per

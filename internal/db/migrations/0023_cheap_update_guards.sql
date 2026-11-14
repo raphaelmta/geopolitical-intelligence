@@ -59,6 +59,32 @@
 --   the trigger's enabled state) through the transaction-local setting
 --   geoint.update_guard_installing; only the tables' owner can ALTER them,
 --   so the setting gives no one else anything.
+--   The event trigger runs as whoever issues the ALTER — for these tables
+--   the owner, a superuser — and calls <schema>.install_update_guard in a
+--   schema where the worker may CREATE. It calls it only when that function
+--   is owned by the table's owner and by the event trigger's owner; a
+--   function of that name and signature owned by anyone else (planted, for
+--   instance after `goose down` of this file) makes the ALTER fail, naming
+--   it, and is never executed. No legitimate state has such a function: only
+--   this file creates it, as the owner. (Changing the owner of a guarded
+--   table with ALTER TABLE … OWNER TO is refused for the same reason;
+--   REASSIGN OWNED moves tables and functions together.)
+--   Dropping or renaming a column: a column the WHEN clause compares cannot
+--   be dropped (the trigger depends on it), and DROP … CASCADE is refused
+--   above. A migration that drops one runs, in one transaction: SET LOCAL
+--   geoint.update_guard_installing = 'on'; ALTER TABLE … DROP COLUMN …
+--   CASCADE; SELECT install_update_guard('<table>'::regclass, ARRAY[…]::text[]).
+--   Dropping or renaming a column on the allow-list makes every later ALTER
+--   TABLE of the table fail with "install_update_guard(<table>): the
+--   allow-list {…} must name columns of the table" (the event trigger
+--   re-installs with the old allow-list, read from the trigger's arguments):
+--   do the same three steps with the new allow-list.
+--   Known limits: a column added later is compared with its type's equality
+--   (a type whose = is looser than its text — interval, a nondeterministic
+--   collation — or that has no = needs a decision, which the catalogue test
+--   forces); an ADD COLUMN that reaches a guarded table by recursion from a
+--   parent (after an owner-made INHERIT or ATTACH PARTITION) is reported for
+--   the parent and does not re-install the guard (the catalogue test fails).
 --
 -- 3. search_path. The worker may CREATE in this schema (0021). A trigger
 -- function that resolves a name through the caller's search_path could be
@@ -68,7 +94,11 @@
 -- functions here, run with search_path = pg_catalog, pg_temp; nothing they
 -- use lives in the application schema except what they name with it.
 -- TestTriggerFunctionsPinSearchPath fails on a trigger function, event
--- trigger function or SECURITY DEFINER function without it.
+-- trigger function or SECURITY DEFINER function without it. The statements
+-- of this file run as the owner under the schema's search_path, so every
+-- call here names its argument types exactly (casts) or its schema
+-- (pg_catalog.…): an exact-type function the worker created beforehand
+-- would otherwise be preferred to the intended one.
 --
 -- Safe on the national base (≈ 70 M company_version, 50 M relationship
 -- rows): CREATE OR REPLACE TRIGGER rewrites one pg_trigger row, ALTER
@@ -169,31 +199,52 @@ REVOKE EXECUTE ON FUNCTION install_update_guard(regclass, text[]) FROM PUBLIC;
 -- migrations of several schemas wait for each other on the advisory lock).
 -- +goose StatementBegin
 DO $$
+DECLARE
+    path text := pg_catalog.current_setting('search_path'::text);
 BEGIN
-    PERFORM pg_advisory_xact_lock(hashtext('geoint_update_guard_reinstall'));
+    -- Operators and functions of this block from pg_catalog only.
+    PERFORM pg_catalog.set_config('search_path'::text, 'pg_catalog, pg_temp'::text, true);
+    PERFORM pg_advisory_xact_lock(hashtext('geoint_update_guard_reinstall'::text)::bigint);
     CREATE SCHEMA IF NOT EXISTS geoint_guard;
-    REVOKE ALL ON SCHEMA geoint_guard FROM PUBLIC;
+    IF (SELECT n.nspowner FROM pg_namespace n WHERE n.nspname = 'geoint_guard')
+       <> (SELECT r.oid FROM pg_roles r WHERE r.rolname = current_user) THEN
+        RAISE EXCEPTION 'schema geoint_guard exists and belongs to %, not to the migrating owner %: drop it and migrate again',
+            (SELECT n.nspowner::regrole FROM pg_namespace n WHERE n.nspname = 'geoint_guard'), current_user;
+    END IF;
+    REVOKE ALL ON SCHEMA geoint_guard FROM PUBLIC, geoint_worker, geoint_api;
     -- For every ALTER TABLE of relationship, person_record or
     -- company_version in a schema that has install_update_guard: re-install
     -- the guard with its current allow-list, or refuse the ALTER if it
-    -- dropped the guard. Any other table: nothing.
+    -- dropped the guard. Any other table: nothing. install_update_guard is
+    -- called only when owned by the table's owner and by this event
+    -- trigger's owner; one owned by anyone else is refused, never run.
     CREATE OR REPLACE FUNCTION geoint_guard.reinstall_update_guards() RETURNS event_trigger
         LANGUAGE plpgsql SET search_path = pg_catalog, pg_temp AS $f$
     DECLARE
         r    record;
         args text[];
+        fn   regprocedure;
+        fown oid;
     BEGIN
         IF current_setting('geoint.update_guard_installing', true) = 'on' THEN
             RETURN;
         END IF;
-        FOR r IN SELECT DISTINCT c.oid, c.relname, n.nspname
+        FOR r IN SELECT DISTINCT c.oid, c.relname, c.relowner, n.nspname
                  FROM pg_catalog.pg_event_trigger_ddl_commands() d
                  JOIN pg_catalog.pg_class c ON c.oid = d.objid
                  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
                  WHERE d.classid = 'pg_catalog.pg_class'::regclass
                    AND c.relname IN ('relationship', 'person_record', 'company_version')
-                   AND to_regprocedure(format('%I.install_update_guard(regclass, text[])', n.nspname)) IS NOT NULL
         LOOP
+            fn := pg_catalog.to_regprocedure(pg_catalog.format('%I.install_update_guard(regclass, text[])', r.nspname));
+            CONTINUE WHEN fn IS NULL; -- a schema without this file's guards
+            fown := (SELECT p.proowner FROM pg_catalog.pg_proc p WHERE p.oid = fn);
+            IF fown <> r.relowner OR fown <> (SELECT e.evtowner FROM pg_catalog.pg_event_trigger e
+                                              WHERE e.evtname = 'geoint_update_guard_reinstall') THEN
+                RAISE EXCEPTION 'ALTER TABLE %.% refused: % belongs to %, not to the owner of the table (%) and of the update guards: '
+                    'it was not created by migration 0023 and is not run; drop it, then repeat the ALTER',
+                    r.nspname, r.relname, fn, fown::regrole, r.relowner::regrole;
+            END IF;
             SELECT array_remove(string_to_array(encode(t.tgargs, 'escape'), '\000'), '')
               INTO args
               FROM pg_catalog.pg_trigger t
@@ -203,38 +254,61 @@ BEGIN
                     'never DROP … CASCADE a column the guard compares; re-install the guard instead',
                     r.nspname, r.relname, r.relname;
             END IF;
-            EXECUTE format('SELECT %I.install_update_guard($1, $2)', r.nspname) USING r.oid::regclass, args;
+            EXECUTE pg_catalog.format('SELECT %I.install_update_guard($1::pg_catalog.regclass, $2::pg_catalog.text[])', r.nspname)
+                USING r.oid::regclass, args;
         END LOOP;
     END
     $f$;
-    IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_event_trigger WHERE evtname = 'geoint_update_guard_reinstall') THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_event_trigger WHERE evtname = 'geoint_update_guard_reinstall') THEN
         CREATE EVENT TRIGGER geoint_update_guard_reinstall ON ddl_command_end
             WHEN TAG IN ('ALTER TABLE') EXECUTE FUNCTION geoint_guard.reinstall_update_guards();
     END IF;
+    PERFORM set_config('search_path'::text, path, true);
 END
 $$;
 -- +goose StatementEnd
 
 -- The allow-lists of migration 0001, unchanged.
-SELECT install_update_guard('relationship', ARRAY['src_entity_id', 'dst_entity_id', 'last_seen_collection_id',
-    'closed_collection_id', 'valid_to_after', 'valid_to_before']);
-SELECT install_update_guard('person_record', ARRAY['entity_id', 'identity_confidence', 'locked_by_decision_id']);
-SELECT install_update_guard('company_version', ARRAY['last_seen_collection_id', 'closed_collection_id']);
+-- Exact argument types: an install_update_guard(text, …) planted beforehand
+-- would otherwise win over this file's for a string literal.
+SELECT install_update_guard('relationship'::pg_catalog.regclass, ARRAY['src_entity_id', 'dst_entity_id',
+    'last_seen_collection_id', 'closed_collection_id', 'valid_to_after', 'valid_to_before']::pg_catalog.text[]);
+SELECT install_update_guard('person_record'::pg_catalog.regclass,
+    ARRAY['entity_id', 'identity_confidence', 'locked_by_decision_id']::pg_catalog.text[]);
+SELECT install_update_guard('company_version'::pg_catalog.regclass,
+    ARRAY['last_seen_collection_id', 'closed_collection_id']::pg_catalog.text[]);
 
 -- +goose Down
--- The event trigger serves every schema of the database and skips a schema
--- without install_update_guard: it stays.
-DROP FUNCTION install_update_guard(regclass, text[]);
+-- install_update_guard goes first: from then on the event trigger skips
+-- this schema, and a function of that name planted later by another role
+-- makes the owner's ALTER TABLE fail instead of running. The event trigger
+-- serves every schema of the database: it is dropped with its schema only
+-- when no schema has install_update_guard any more. The pinned search_path
+-- of the trigger functions stays: going back to the caller's search_path
+-- would reopen the hole it closes (it changes no rule).
+DROP FUNCTION install_update_guard(pg_catalog.regclass, pg_catalog.text[]);
 CREATE OR REPLACE TRIGGER relationship_guard_update BEFORE UPDATE ON relationship FOR EACH ROW EXECUTE FUNCTION guard_update(
     'src_entity_id', 'dst_entity_id', 'last_seen_collection_id', 'closed_collection_id', 'valid_to_after', 'valid_to_before');
 CREATE OR REPLACE TRIGGER person_record_guard_update BEFORE UPDATE ON person_record FOR EACH ROW EXECUTE FUNCTION guard_update(
     'entity_id', 'identity_confidence', 'locked_by_decision_id');
 CREATE OR REPLACE TRIGGER company_version_guard_update BEFORE UPDATE ON company_version FOR EACH ROW EXECUTE FUNCTION guard_update(
     'last_seen_collection_id', 'closed_collection_id');
-DROP FUNCTION update_guard_columns_changed(regclass, text[]);
-ALTER FUNCTION forbid_delete() RESET search_path;
-ALTER FUNCTION forbid_update() RESET search_path;
-ALTER FUNCTION guard_update() RESET search_path;
-ALTER FUNCTION guard_proposal_update() RESET search_path;
-ALTER FUNCTION guard_collection_status() RESET search_path;
-ALTER FUNCTION guard_entity_update() RESET search_path;
+DROP FUNCTION update_guard_columns_changed(pg_catalog.regclass, pg_catalog.text[]);
+-- +goose StatementBegin
+DO $$
+DECLARE
+    path text := pg_catalog.current_setting('search_path'::text);
+BEGIN
+    PERFORM pg_catalog.set_config('search_path'::text, 'pg_catalog, pg_temp'::text, true);
+    PERFORM pg_advisory_xact_lock(hashtext('geoint_update_guard_reinstall'::text)::bigint);
+    IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_proc p
+                   WHERE p.proname = 'install_update_guard'
+                     AND p.proargtypes = '2205 1009'::pg_catalog.oidvector) THEN  -- (regclass, text[])
+        DROP EVENT TRIGGER IF EXISTS geoint_update_guard_reinstall;
+        DROP FUNCTION IF EXISTS geoint_guard.reinstall_update_guards();
+        DROP SCHEMA IF EXISTS geoint_guard;
+    END IF;
+    PERFORM set_config('search_path'::text, path, true);
+END
+$$;
+-- +goose StatementEnd

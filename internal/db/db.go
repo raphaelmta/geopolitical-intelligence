@@ -36,6 +36,17 @@ func Open(ctx context.Context, url string) (*pgxpool.Pool, error) {
 // one ever applied anywhere; skipped numbers (0010, 0015, 0020) stay unused.
 // goose refuses a pending migration numbered below the applied maximum.
 func Migrate(ctx context.Context, url string) error {
+	return migrate(ctx, url, 0)
+}
+
+// MigrateTo applies the pending migrations up to and including version
+// (tests that need the schema as an earlier migration left it).
+func MigrateTo(ctx context.Context, url string, version int64) error {
+	return migrate(ctx, url, version)
+}
+
+// migrate applies pending migrations up to version (0: all).
+func migrate(ctx context.Context, url string, version int64) error {
 	cfg, err := pgx.ParseConfig(url)
 	if err != nil {
 		return fmt.Errorf("db: parse url: %w", err)
@@ -56,7 +67,12 @@ func Migrate(ctx context.Context, url string) error {
 	if err != nil {
 		return fmt.Errorf("db: migration provider: %w", err)
 	}
-	if _, err := provider.Up(ctx); err != nil {
+	if version > 0 {
+		_, err = provider.UpTo(ctx, version)
+	} else {
+		_, err = provider.Up(ctx)
+	}
+	if err != nil {
 		return fmt.Errorf("db: migrate: %w", err)
 	}
 	return nil
