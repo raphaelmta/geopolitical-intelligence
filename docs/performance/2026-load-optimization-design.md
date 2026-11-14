@@ -571,6 +571,80 @@ section 7.
   That is a redesign of search, outside this work.
 - **Risk.** Low. **Gain.** Rebuild 87 s → about 22–25 s (× 3.5); 4 s for a
   collection that changed nothing (the weekly small sources).
+- **Implemented** (`internal/search/rebuild.go`; migration
+  `0024_search_build_version.sql`). Same dirty marker, lock, build tables,
+  swap and recovery as before. The build now starts with a degree table
+  (`search_degree`); the degree table, the change check and the ranked table
+  run in one REPEATABLE READ transaction, so the tables and the decision to
+  skip come from one snapshot. **"Nothing changed"** (`changedSQL`, only in
+  `RebuildIfDirty`, i.e. the worker's refresh and catch-up; `Rebuild` never
+  skips) is a comparison of data, not a log of writes: a FULL JOIN of the
+  candidate entities (every entity of a kind with a code; a person entity
+  only while it has a person record) with the three live tables, true when an
+  entity missing from them would be searchable (`search_norm(name)` not NULL,
+  computed for those entities only), when an indexed entity is no longer a
+  candidate (emptied by a merge, early pass of a failed collection included),
+  or when kind or grau differ. Those are all the inputs of the build given the
+  same build version, because an entity's name is immutable
+  (`guard_entity_update`) and entities are never deleted; so whatever wrote
+  `entity`, `person_record.entity_id` or `relationship` (src/dst entity,
+  closed collection) — loaders, CloseUnseen, the early and final identity
+  passes, analyst Merge/Split/Decide, another source — and whether or not its
+  collection reached a search refresh, the next refresh sees it. A failed
+  collection counts as finished, so the state is dirty after it. A skip also
+  needs the stored build version and frequent-token threshold to equal the
+  current ones; it then records the request as covered (`rebuilt_from`,
+  `finished_collections`) and leaves the tables and `generation` untouched.
+  **Reuse**: a build takes `name_norm` and `tokens` of entities already in
+  the live tables (`coalesce(live, computed)`), only when
+  `search_state.build_version` equals the build version computed now: an md5
+  of the catalogue definitions of `search_norm`, `search_words` and
+  `search_tokens` (`pg_get_functiondef`), the unaccent extension version and
+  dictionary options, the server version, and a sha256 of the build
+  statements in `rebuild.go`. A migration or code change to any of them
+  changes the version without anyone bumping a number; the next rebuild is
+  then full and is not skipped. The version is checked again inside the swap
+  transaction: if it changed during the build (a migration meanwhile), the
+  tables are not swapped in and the state stays dirty. The first rebuild
+  after migration 0024 is full (no version stored). **Tests**
+  (`internal/search/reuse_test.go`, `receita/search_refresh_test.go`; every
+  step compared with a from-scratch build by
+  `claimstest.CheckSearchMatchesRebuild`, which now also compares the stored
+  rows with entity ids in physical order and clears the version so the
+  reference cannot reuse): a no-change refresh skips (generation, rows and
+  clean state); ten kinds of change (new entity, degree only, close,
+  re-point, emptied person entity, split, ...) rebuild, and the two that
+  change nothing searchable skip; another threshold rebuilds; a live table
+  missing a row rebuilds; reuse is observable (a corrupted live value
+  survives a same-version rebuild) and disappears with another stored
+  version and after replacing each of the three functions; a function
+  replaced during the build is not swapped in; an interrupted reusing
+  rebuild leaves the old tables byte for byte; a failed collection's merge is
+  not skipped. On the Receita pipeline: first load, re-load of the same
+  edition (skipped), analyst Decide, a load failing after its early pass
+  (which empties an indexed entity) followed by an unchanged collection
+  (rebuilt), Merge, Split, unchanged again (skipped), re-load with changes
+  (rebuilt, reusing), another source adding only relationships (rebuilt), the
+  next edition unchanged (skipped). Task 1's goldens pass unchanged.
+  Mutation check: ignoring grau or emptied entities in `changedSQL` fails
+  these tests. **Measured** (`TestSearchRebuildTimings` in
+  `internal/search/bench_test.go`, `SEARCH_BENCH=1 SEARCH_BENCH_N=1000000`,
+  test database with the small settings; 1 M synthetic entities, 1.5 M
+  relationships; the code before this task run on the same generator with
+  the same steps; two rounds each, both rounds within 1 %):
+
+  | refresh | before | after |
+  |---|---|---|
+  | first build | 19.9 s | 20.1 s |
+  | nothing changed | 19.8–20.2 s | **2.5 s** (skipped) |
+  | after 1 % new entities and relationships | 20.4–20.5 s | **8.9 s** (reusing) |
+  | same data, no reuse (version changed) | — | 22.2–22.4 s |
+
+  A full build without reuse costs about 9 % more than before (the degree
+  is materialised once for the check and the ranking); it happens only on
+  the first rebuild after the migration and after a change to the search
+  functions or build statements. The sample measurement of section 2
+  (87 s) was not repeated: `make bench-load` is run by the owner.
 
 ### Task 6 — Set-based verification instead of per-row FK checks, for the loader's bulk statements only *(owner decision D1)*
 

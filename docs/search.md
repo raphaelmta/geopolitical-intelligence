@@ -19,25 +19,58 @@ relações abertas, somadas todas as fontes.
 ## Reconstrução
 
 - Ao fim de toda coleta bem-sucedida, o worker marca as tabelas como sujas
-  (`search_state.requested_at`) e as reconstrói por inteiro. A troca é por
-  renomeação.
+  (`search_state.requested_at`) e monta tabelas novas inteiras, ao lado das
+  em uso (não há atualização incremental: as consultas dependem da ordem
+  física por `search_rank`, um posto global). A troca é por renomeação.
+- **Nada mudou, nada é reconstruído.** Antes de montar as tabelas, a
+  reconstrução calcula o grau de toda entidade e compara com as tabelas em
+  uso: o conjunto de entidades pesquisáveis, o tipo e o grau de cada uma.
+  Se tudo for igual, ela só registra o pedido como atendido (sem trocar as
+  tabelas nem mudar `generation`); o log do worker diz "search unchanged by
+  the collection; rebuild skipped". A comparação é feita sobre os dados, não
+  sobre um registro do que foi escrito: pega qualquer mudança, venha de onde
+  vier (coleta, coleta que falhou depois da primeira passada de identidades,
+  decisão de analista entre coletas, fonte que só acrescenta vínculos). O
+  nome não precisa ser comparado porque uma entidade nunca muda de nome
+  (`guard_entity_update`, migração 0019).
+- **O que já foi calculado é reaproveitado.** Uma reconstrução pega o nome
+  normalizado e as palavras (`tokens`) das entidades que já estão nas
+  tabelas em uso e só calcula os das novas. O resultado é, linha a linha, o
+  de uma reconstrução do zero (o teste compara as duas depois de cada tipo
+  de evento).
+- **Versão da reconstrução** (`search_state.build_version`, migração 0024):
+  um resumo das definições atuais de `search_norm`, `search_words` e
+  `search_tokens` no catálogo, do dicionário `unaccent` (versão da extensão
+  e do servidor) e do texto dos comandos da reconstrução. O reaproveitamento
+  e o salto só valem quando a versão guardada é igual à atual, e o salto
+  também exige o mesmo limiar de palavras frequentes
+  (`search_state.frequent_threshold`). Uma migração que mude a normalização
+  ou a regra de palavras muda a versão sozinha, sem ninguém lembrar de
+  incrementá-la: a reconstrução seguinte calcula tudo de novo. Se a versão
+  mudar durante uma reconstrução, as tabelas montadas não entram e a
+  seguinte calcula tudo.
+- Quem altera as tabelas de busca à mão (fora da troca) invalida o
+  reaproveitamento: para isso, `UPDATE search_state SET build_version =
+  NULL`.
 - A marca é gravada mesmo se o worker estiver sendo desligado, com até 5 s
   de prazo, e nunca volta no tempo. Se ainda assim ela se perder, as tabelas
   também ficam sujas quando há mais coletas encerradas (concluídas ou com
   falha) do que no início da última reconstrução. Essa contagem não depende
   do relógio.
 - Se a reconstrução falhar ou for interrompida (desligamento), as tabelas
-  continuam sujas. O worker refaz a reconstrução ao iniciar, em segundo plano,
+  continuam sujas e as anteriores continuam intactas (a reconstrução só lê
+  delas). O worker refaz a reconstrução ao iniciar, em segundo plano,
   e também após a próxima coleta. Enquanto isso, as tabelas anteriores
   continuam servindo.
 - Só uma reconstrução roda por vez. Pedidos que chegam durante uma
   reconstrução geram exatamente mais uma.
 - A troca espera as buscas em andamento com `lock_timeout` curto (2 s) e
   tenta de novo, até 10 vezes, por cerca de 1 min.
-- **Tempo:** no volume nacional, a reconstrução deve passar dos 819 s do
-  spike, porque agora também calcula a normalização e o grau (a medir na
-  Tarefa 20). Durante esse tempo, o worker não consome outra mensagem de
-  coleta.
+- **Tempo:** na base nacional, a reconstrução completa levou cerca de 41 min
+  por coleta (2026-11, antes do salto e do reaproveitamento; ver
+  `docs/performance/2026-load-optimization-design.md`, tarefa 5, para os
+  tempos medidos depois). Durante esse tempo, o worker não consome outra
+  mensagem de coleta.
 - Outros processos (a API) podem usar a lista anterior de palavras
   frequentes por até 30 s depois de uma troca.
 

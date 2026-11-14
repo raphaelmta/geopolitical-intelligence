@@ -126,7 +126,7 @@ O agendador nunca faz a primeira coleta de uma fonte: a primeira carga de cada f
 
 O prazo da Receita conta a partir do dia em que a edição foi publicada (a data do arquivo mais novo dela), não do primeiro dia do mês da edição. Se a Receita atrasar uma edição além desses 45 dias, a fonte e todos os vínculos dela aparecem como **vencidos** até a próxima carga.
 
-Depois de cada coleta, as tabelas de busca são reconstruídas por inteiro; na base nacional isso levou de 39 a 44 minutos por coleta (medido em 2026-11), e durante esse tempo a busca continua servindo as tabelas anteriores.
+Depois de cada coleta, as tabelas de busca são reconstruídas por inteiro; na base nacional isso levou de 39 a 44 minutos por coleta (medido em 2026-11, antes da mudança a seguir), e durante esse tempo a busca continua servindo as tabelas anteriores. Desde então, uma coleta que não muda nada pesquisável (nenhuma entidade pesquisável nova ou esvaziada, nenhum grau diferente) não reconstrói, e as outras reaproveitam o nome normalizado e as palavras das entidades já indexadas (`docs/search.md`, "Reconstrução"); os tempos nacionais com isso ainda não foram medidos.
 
 Para desligar o agendador (só coletas pedidas à mão), ponha `SCHEDULER_ENABLED=false` no `.env` e rode `make up` de novo.
 
