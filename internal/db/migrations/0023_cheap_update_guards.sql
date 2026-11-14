@@ -239,8 +239,11 @@ BEGIN
             fn := pg_catalog.to_regprocedure(pg_catalog.format('%I.install_update_guard(regclass, text[])', r.nspname));
             CONTINUE WHEN fn IS NULL; -- a schema without this file's guards
             fown := (SELECT p.proowner FROM pg_catalog.pg_proc p WHERE p.oid = fn);
-            IF fown <> r.relowner OR fown <> (SELECT e.evtowner FROM pg_catalog.pg_event_trigger e
-                                              WHERE e.evtname = 'geoint_update_guard_reinstall') THEN
+            -- IS DISTINCT FROM, never <>: a function dropped between the lookup above and
+            -- this read gives a NULL owner, and a NULL comparison must refuse, not pass.
+            IF fown IS NULL OR fown IS DISTINCT FROM r.relowner
+               OR fown IS DISTINCT FROM (SELECT e.evtowner FROM pg_catalog.pg_event_trigger e
+                                         WHERE e.evtname = 'geoint_update_guard_reinstall') THEN
                 RAISE EXCEPTION 'ALTER TABLE %.% refused: % belongs to %, not to the owner of the table (%) and of the update guards: '
                     'it was not created by migration 0023 and is not run; drop it, then repeat the ALTER',
                     r.nspname, r.relname, fn, fown::regrole, r.relowner::regrole;
