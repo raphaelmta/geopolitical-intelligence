@@ -679,7 +679,7 @@ task 9; (3) the search rebuild after task 5.
 | 5 | 20261114T115449Z-baseline2-pressure | pressure | none (**same-day control**) | 1602 | 723 |
 | 6 | 20261114T123430Z-nofk-roomy | roomy | FKs of the three claim tables dropped; guard and search microbenchmarks | 318 | 329 |
 | 7 | 20261114T124947Z-X-ordered-early-pressure | pressure | range-ordered chunks + Resolve before relationships | 796 | 524 |
-| 8 | 20261114T131254Z-nofk-pressure | pressure | FKs dropped | 953 | 637 |
+| 8 | 20261114T131253Z-nofk-pressure | pressure | FKs dropped | 953 | 637 |
 | 9 | 20261114T134342Z-fkbypass-X-pressure | pressure | 7 + FK checks skipped through `session_replication_role`, FKs kept, guards ALWAYS | 326 | 401 |
 | 10 | 20261114T135631Z-fkbypass-Y-pressure | pressure | 9 + four parallel sessions | 283 | 343 |
 | 11 | 20261114T140801Z-fkbypass-Z-pressure | pressure | 10 + re-seen rows not rewritten; FK mechanism check | 287 | load phase 102 (the prototype's collection then fails at the shrink guard, as expected) |
