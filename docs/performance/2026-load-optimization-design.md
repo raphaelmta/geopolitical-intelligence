@@ -386,6 +386,43 @@ section 7.
   not change; what changes is *when* the first pass runs.
 - **Gain.** Resolve × 7.6 (727 → 79 + 16.5 s). With task 2: first load × 2.0,
   re-load × 1.38.
+- **Implemented** (`Resolver.ResolveRecords` in `internal/identity/resolver.go`;
+  `resolveNewRecords` in `receita/upsert.go` and `tse/upsert.go`).
+  `resolveCollection` is now `resolveBatches` (the unchanged batch loop) and
+  `sweepAndMark`; `ResolveRecords` is the batch loop alone, for one
+  collection, without recovering earlier ones. **How the loaders get it:**
+  `connector.Hooks` has a `ResolveRecords` hook next to `Resolve`; the runner
+  hands it to `Load`, and only to `Load`, through the context
+  (`connector.WithResolveRecords` / `ResolveRecordsFrom`), so the `Connector`
+  interface and the connectors without an early pass are untouched. The
+  worker builds both hooks from one `identity.Resolver`
+  (`collectionHooks`), so the early pass cannot run with another threshold
+  than the final one. A `Load` called without the hook (tests, any other
+  caller) does not resolve early and behaves as before. Receita runs
+  `ANALYZE person_record` and the pass after the persons phase (new test
+  checkpoint `early resolve` after it); TSE after the donors phase, before
+  the claims. No transaction of the load is open across the pass; an error of
+  the pass fails the load. **The re-point skip** is narrower than the detail
+  above says: a batch of the early pass leaves out the moved records first
+  seen by its collection only while that collection has written no
+  relationship (`first_collection_id`, read under the identity lock in the
+  batch). Records of earlier collections that the pass moves are re-pointed
+  as always, and `Resolve` never skips: loaders without an early pass, and a
+  failed collection recovered by a later one, wrote relationships before
+  their records were resolved. **One known difference in behaviour**, the one
+  "Crash behaviour" describes: after a load dies between the passes, its new
+  records are already merged or proposed. An analyst who decides a proposal
+  in that window sees those records in it, where before they only joined at
+  the next collection; no golden scenario is affected (the one with decisions
+  between an interrupted load and its repeat stops before the pass). Tests:
+  the goldens of task 1 pass unchanged, and `TestEquivalence` now fails
+  unless every done collection ran the early pass
+  (`claimstest.Pipeline.CheckEarlyPass`); `TestEarlyResolveLeavesNothingToRepoint`
+  (Receita, TSE: with a trigger logging every re-pointed relationship, 0
+  with the pass, some without it, same canonical dump both ways);
+  `TestCrashBetweenEarlyResolveAndRelationshipsIsCompletedByTheNext`
+  (Receita, TSE); `internal/identity/early_test.go` (same state as Resolve
+  alone, the threshold, the skip's two limits, recovery).
 
 ### Task 4 — Cheap update guards
 

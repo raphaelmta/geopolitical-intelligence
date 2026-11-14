@@ -1,8 +1,9 @@
 # Load benchmark
 
 A repeatable measurement of the data-load path: the real collection code
-(`geoint collect` → worker: fetch, parse, load, CloseUnseen, Resolve, search
-rebuild) on a sample of a Receita edition, run twice — the **first load** and
+(`geoint collect` → worker: fetch, parse, load — with the early identity
+pass between the person records and the relationships —, CloseUnseen,
+Resolve, search rebuild) on a sample of a Receita edition, run twice — the **first load** and
 the **monthly re-load** — in a throwaway compose project. It exists to compare
 two versions of the code or two configurations on the same machine (A/B). Its
 numbers are **relative**: the sample is a few percent of the national base and

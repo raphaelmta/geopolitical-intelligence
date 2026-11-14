@@ -14,7 +14,8 @@ import (
 )
 
 // checkpoint, when set (tests only), runs after each committed step of the
-// set-based phase ("companies", "persons", "relationship chunk <n>"); an
+// set-based phase ("companies", "persons", "early resolve", "relationship
+// chunk <n>"); an
 // error stops the load there, as a crash would.
 var checkpointHook func(point string) error
 
@@ -284,8 +285,9 @@ type step struct {
 	stat      string
 }
 
-// upsert runs the set-based phase in transactions (companies, persons,
-// partners, then one per relationship bucket), logging each statement with its row count and
+// upsert runs the set-based phase in transactions (companies, persons, the
+// early identity pass in its own transactions, partners, then one per
+// relationship bucket), logging each statement with its row count and
 // time. A failure rolls back the current transaction; the earlier ones are
 // complete on their own and the next collection redoes the rest idempotently.
 func upsert(ctx context.Context, pool *pgxpool.Pool, colID int64, scope []string, depth int, stats connector.Stats) error {
@@ -334,6 +336,12 @@ func upsert(ctx context.Context, pool *pgxpool.Pool, colID int64, scope []string
 	if err := checkpoint("persons"); err != nil {
 		return err
 	}
+	if err := resolveNewRecords(ctx, pool, colID); err != nil {
+		return err
+	}
+	if err := checkpoint("early resolve"); err != nil {
+		return err
+	}
 	if err := run(ctx, pool, "partners", nil, []step{
 		{name: "partners", sql: sqlPartners, args: []any{sourceID}},
 		{name: "analyze partner", sql: `ANALYZE receita_stg_partner`},
@@ -344,6 +352,37 @@ func upsert(ctx context.Context, pool *pgxpool.Pool, colID int64, scope []string
 		return err
 	}
 	return analyzeClaims(ctx, pool)
+}
+
+// resolveNewRecords runs the early identity pass (connector.ResolveRecordsFrom)
+// between the persons phase and the relationships: the new records are
+// merged before any relationship cites them, so each chunk writes its
+// relationships at the final entities (read under the identity lock) and the
+// collection's Resolve has nothing to re-point. Every earlier phase is
+// committed and no transaction is open here; the pass commits batch by batch
+// under the identity lock, like Resolve. A load stopped after it leaves
+// merged records and a failed collection without a completion marker, which
+// the next collection's Resolve completes.
+//
+// The statistics of person_record are refreshed first: the pass joins the
+// records just inserted. Without a pass in the context nothing runs.
+func resolveNewRecords(ctx context.Context, pool *pgxpool.Pool, colID int64) error {
+	resolve := connector.ResolveRecordsFrom(ctx)
+	if resolve == nil {
+		return nil
+	}
+	start := time.Now()
+	if _, err := pool.Exec(ctx, `ANALYZE person_record`); err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("receita: analyze person_record: %w", err)
+		}
+		slog.Warn("receita: analyze failed", "table", "person_record", "error", err)
+	}
+	if err := resolve(ctx, colID); err != nil {
+		return fmt.Errorf("receita: early resolve: %w", err)
+	}
+	slog.Info("receita: load phase done", "phase", "early resolve", "elapsed", since(start))
+	return nil
 }
 
 // claimTables are the big tables a Receita load writes.

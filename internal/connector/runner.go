@@ -29,7 +29,9 @@ type RunError struct {
 func (e *RunError) Error() string { return fmt.Sprintf("collection %d: %v", e.CollectionID, e.Err) }
 func (e *RunError) Unwrap() error { return e.Err }
 
-// Run executes one collection: Start, Fetch, Load, CloseUnseen (snapshot
+// Run executes one collection: Start, Fetch, Load (inside which the Receita
+// and TSE loaders run the early identity pass, Hooks.ResolveRecords, between
+// their person records and their relationships), CloseUnseen (snapshot
 // sources only), Resolve, Finish, then the Finished hook. Any error, panic or
 // cancellation before Finish marks the collection failed, stops the later
 // steps and is returned as a *RunError. Errors before Start (unknown source,
@@ -243,7 +245,8 @@ func execute(ctx context.Context, c Connector, src sources.Source, col collectio
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("connector %s: after fetch: %w", src.Key, err)
 	}
-	stats, err := c.Load(ctx, col, files, raw, pool)
+	// Only Load sees the early identity pass (Hooks.ResolveRecords).
+	stats, err := c.Load(WithResolveRecords(ctx, h.ResolveRecords), col, files, raw, pool)
 	if err != nil {
 		return fmt.Errorf("connector %s: load: %w", src.Key, err)
 	}

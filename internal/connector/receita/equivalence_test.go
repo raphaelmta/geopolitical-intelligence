@@ -445,6 +445,9 @@ func TestEquivalence(t *testing.T) {
 					if s.p.SearchErr != nil {
 						t.Fatal(s.p.SearchErr)
 					}
+					// The scenario ran in the new order (task 3): every load
+					// resolved its new records before its relationships.
+					s.p.CheckEarlyPass(t)
 					return s.e.pool
 				})
 		})

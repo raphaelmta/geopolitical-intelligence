@@ -293,6 +293,13 @@ outros candidatos, 17.159 próprios, 3.286 financiamento coletivo, 1.773
   acréscimos (a primeira publicação de cada recibo vale).
 - **Arquivo de origem**: cada CSV carregado guarda em `collection_file` a
   URL do zip no CDN (`source_url`).
+- **Identidades antes dos vínculos**: depois de gravar as fichas de
+  candidaturas e de doadores e antes do primeiro vínculo, a carga roda
+  `ANALYZE person_record` e a primeira passada da resolução de identidades
+  só para as fichas desta coleta (`identity.Resolver.ResolveRecords`, como
+  na Receita: veja `receita.md`). Os vínculos já nascem apontando para a
+  entidade final de cada ficha; o `Resolve` do fim da coleta não reaponta
+  nada.
 - **Estatísticas**: depois das fases em lote a carga roda `ANALYZE` em
   `entity`, `person_record` e `relationship`.
 

@@ -376,6 +376,17 @@ Observações sobre a tabela `Naturezas`: não vem ordenada; há dois códigos d
   se fundam em silêncio; com o mesmo código, viram uma só entidade.
 - **Sócio PJ órfão** (ou empresa que só aparece em Sócios): cria a entidade
   `company` com o nome da linha de sócio, sem `company_version`.
+- **Identidades antes dos vínculos**: depois de gravar as fichas novas e
+  antes do primeiro vínculo, a carga roda `ANALYZE person_record` e a
+  primeira passada da resolução de identidades só para as fichas desta
+  coleta (`identity.Resolver.ResolveRecords`, o mesmo resolvedor e o mesmo
+  limite de nome comum da resolução final). Assim cada vínculo já é gravado
+  apontando para a entidade em que a ficha ficou, e a resolução do fim da
+  coleta (`Resolve`) não precisa mover ficha nem reapontar vínculo: só
+  atualiza as propostas (o número de vínculos de cada uma), confere os
+  ponteiros e marca a coleta como resolvida. Uma carga interrompida entre as
+  duas passadas deixa fichas já juntadas e a coleta falhada sem a marca; a
+  resolução da coleta seguinte a completa.
 - **Vínculos em lotes**: os vínculos são gravados por balde — até 1.024
   faixas consecutivas de `cnpj_basico` com quantidades parecidas de linhas de
   Sócios, recalculadas a cada carga a partir do staging

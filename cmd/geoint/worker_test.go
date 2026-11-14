@@ -160,6 +160,11 @@ func (f *fakeSteps) CloseUnseen(_ context.Context, _ sources.Source, _ collectio
 	return 0, nil
 }
 
+func (f *fakeSteps) ResolveRecords(context.Context, int64) (identity.Result, error) {
+	f.calls = append(f.calls, "resolve-records")
+	return identity.Result{}, nil
+}
+
 func (f *fakeSteps) Resolve(context.Context, int64) (identity.Result, error) {
 	f.calls = append(f.calls, "resolve")
 	return identity.Result{}, nil
@@ -219,6 +224,29 @@ func TestCollectionHooksRefreshSearchAfterResolve(t *testing.T) {
 	runHooks(t, h)
 	if got := strings.Join(f.calls, ","); got != "close,resolve,refresh:41" {
 		t.Fatalf("calls = %s, want close,resolve,refresh:41", got)
+	}
+}
+
+// The early identity pass the loaders call is the resolver of the final
+// Resolve (one configuration, one threshold), and it is what
+// connector.Collect hands to Load.
+func TestCollectionHooksGiveLoadersTheResolversEarlyPass(t *testing.T) {
+	logs := captureLogs(t)
+	f := &fakeSteps{}
+	h := collectionHooks(f, f, f)
+	if h.ResolveRecords == nil {
+		t.Fatal("no ResolveRecords hook: the loaders would write relationships before resolving their records")
+	}
+	if err := h.ResolveRecords(context.Background(), 41); err != nil {
+		t.Fatal(err)
+	}
+	runHooks(t, h)
+	if got := strings.Join(f.calls, ","); got != "resolve-records,close,resolve,refresh:41" {
+		t.Fatalf("calls = %s, want resolve-records,close,resolve,refresh:41", got)
+	}
+	if out := logs.String(); !strings.Contains(out, "new identities resolved before the relationships") ||
+		!strings.Contains(out, "collection=41") {
+		t.Errorf("the early pass was not logged with its collection:\n%s", out)
 	}
 }
 

@@ -74,9 +74,10 @@ type input struct {
 //     are copied into staging; malformed rows are counted and skipped, and
 //     rows not loaded by design are counted by reason;
 //  3. set-based SQL (upsert.go) writes parties, candidate and donor person
-//     records, donor companies and the candidate_for and donated_to
-//     relationships, these in short per-bucket transactions under the
-//     identity lock.
+//     records and donor companies, runs the early identity pass when the
+//     context carries one (connector.ResolveRecordsFrom), and writes the
+//     candidate_for and donated_to relationships, these in short per-bucket
+//     transactions under the identity lock.
 func (t *tse) Load(ctx context.Context, col collection.Collection, files []rawstore.File, raw rawstore.Store, pool *pgxpool.Pool) (_ connector.Stats, err error) {
 	if col.SourceID != sourceID {
 		return nil, fmt.Errorf("tse: collection %d belongs to source %d", col.ID, col.SourceID)

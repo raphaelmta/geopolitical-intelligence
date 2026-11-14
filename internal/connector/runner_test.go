@@ -330,3 +330,99 @@ func TestRunFinishedHookSkippedOnFailure(t *testing.T) {
 		t.Error("Finished ran for a failed collection")
 	}
 }
+
+// The early identity pass (Hooks.ResolveRecords) reaches Load, and only
+// Load, through its context; the loader decides when to call it.
+func TestRunHandsTheEarlyIdentityPassToLoad(t *testing.T) {
+	pool := setup(t)
+	var calls []string
+	var early []int64
+	c := &fake{key: "receita"}
+	c.fetch = func(ctx context.Context) ([]rawstore.File, error) {
+		if connector.ResolveRecordsFrom(ctx) != nil {
+			t.Error("Fetch was given the early identity pass")
+		}
+		return nil, nil
+	}
+	c.load = func(ctx context.Context) (connector.Stats, error) {
+		resolve := connector.ResolveRecordsFrom(ctx)
+		if resolve == nil {
+			t.Fatal("Load was not given the early identity pass")
+		}
+		calls = append(calls, "load")
+		if err := resolve(ctx, c.gotCol.ID); err != nil {
+			return nil, err
+		}
+		return connector.Stats{"rows_read": 1, "rows_skipped": 0}, nil
+	}
+	h := connector.Hooks{
+		ResolveRecords: func(_ context.Context, id int64) error {
+			calls = append(calls, "resolve records")
+			early = append(early, id)
+			return nil
+		},
+		CloseUnseen: func(ctx context.Context, _ sources.Source, _ collection.Collection) (int64, error) {
+			if connector.ResolveRecordsFrom(ctx) != nil {
+				t.Error("CloseUnseen was given the early identity pass")
+			}
+			calls = append(calls, "close")
+			return 0, nil
+		},
+		Resolve: func(ctx context.Context, _ int64) error {
+			if connector.ResolveRecordsFrom(ctx) != nil {
+				t.Error("Resolve was given the early identity pass")
+			}
+			calls = append(calls, "resolve")
+			return nil
+		},
+	}
+	if err := connector.Run(ctx, c, req("receita"), pool, nil, h); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(calls, ","); got != "load,resolve records,close,resolve" {
+		t.Errorf("calls = %s", got)
+	}
+	if len(early) != 1 || early[0] != c.gotCol.ID {
+		t.Errorf("early pass ran for %v, want the collection %d", early, c.gotCol.ID)
+	}
+
+	// Without the hook, Load sees none: the loader writes its relationships
+	// first and Resolve does all the work.
+	c.load = func(ctx context.Context) (connector.Stats, error) {
+		if connector.ResolveRecordsFrom(ctx) != nil {
+			t.Error("Load was given an early identity pass that no hook provides")
+		}
+		return connector.Stats{"rows_read": 1, "rows_skipped": 0}, nil
+	}
+	if err := connector.Run(ctx, c, req("receita"), pool, nil, connector.Hooks{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// An error of the early pass is the loader's error: the collection fails
+// and the later steps do not run.
+func TestRunEarlyIdentityPassErrorFailsTheCollection(t *testing.T) {
+	pool := setup(t)
+	boom := errors.New("identity lock: deadlock")
+	c := &fake{key: "tse"}
+	c.load = func(ctx context.Context) (connector.Stats, error) {
+		if err := connector.ResolveRecordsFrom(ctx)(ctx, c.gotCol.ID); err != nil {
+			return nil, err
+		}
+		return connector.Stats{"rows_read": 1, "rows_skipped": 0}, nil
+	}
+	resolved := false
+	err := connector.Run(ctx, c, req("tse"), pool, nil, connector.Hooks{
+		ResolveRecords: func(context.Context, int64) error { return boom },
+		Resolve:        func(context.Context, int64) error { resolved = true; return nil },
+	})
+	if !errors.Is(err, boom) {
+		t.Fatalf("err = %v, want the early pass's error", err)
+	}
+	if resolved {
+		t.Error("Resolve ran after a failed load")
+	}
+	if got := lastCollection(t, pool); got.status != "failed" {
+		t.Errorf("collection status = %s, want failed", got.status)
+	}
+}

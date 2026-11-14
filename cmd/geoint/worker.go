@@ -67,6 +67,7 @@ type unseenCloser interface {
 	CloseUnseen(ctx context.Context, src sources.Source, col collection.Collection, minRatio float64) (int64, error)
 }
 type identityResolver interface {
+	ResolveRecords(ctx context.Context, collectionID int64) (identity.Result, error)
 	Resolve(ctx context.Context, collectionID int64) (identity.Result, error)
 }
 type searchRebuilder interface {
@@ -74,8 +75,12 @@ type searchRebuilder interface {
 	RebuildIfDirty(ctx context.Context) (search.Stats, bool, error)
 }
 
-// collectionHooks wires the steps that follow a collection's Load:
+// collectionHooks wires the early identity pass that the Receita and TSE
+// loaders run inside Load (ResolveRecords, between their person records and
+// their relationships) and the steps that follow a collection's Load:
 // CloseUnseen, Resolve and, once the collection is done, the search refresh.
+// Both identity passes are the same resolver r, so the early one merges with
+// the configured threshold (IDENTITY_COMMON_NAME_THRESHOLD), never a default.
 //
 // The refresh runs in the Finished hook, after the collection is marked done:
 // its claims are loaded correctly whatever happens to search, so a failed
@@ -88,6 +93,19 @@ type searchRebuilder interface {
 // meanwhile this worker takes no other ingest message.
 func collectionHooks(c unseenCloser, r identityResolver, s searchRebuilder) connector.Hooks {
 	return connector.Hooks{
+		ResolveRecords: func(ctx context.Context, collectionID int64) error {
+			res, err := r.ResolveRecords(ctx, collectionID)
+			if err != nil {
+				return err
+			}
+			// The merges of the collection are counted here; the Resolve at
+			// its end then reports auto_merged = 0 and the proposals with
+			// their final connections.
+			slog.Info("new identities resolved before the relationships", "collection", collectionID,
+				"auto_merged", res.AutoMerged, "auto_merged_groups", res.AutoMergedGroups,
+				"proposed", res.Proposed, "proposals_created", res.ProposalsCreated)
+			return nil
+		},
 		CloseUnseen: func(ctx context.Context, src sources.Source, col collection.Collection) (int64, error) {
 			closed, err := c.CloseUnseen(ctx, src, col, closeUnseenMinRatio)
 			if err != nil {

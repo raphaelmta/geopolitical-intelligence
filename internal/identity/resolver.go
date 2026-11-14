@@ -208,13 +208,56 @@ func (r *Resolver) Resolve(ctx context.Context, collectionID int64) (Result, err
 	return total, nil
 }
 
+// ResolveRecords is the early pass of a loader: it groups the person records
+// of the names collectionID touched, exactly as Resolve does (the same
+// batches, the same statements, the same threshold), and stops there. It
+// does not resolve earlier collections, does not sweep the collection's
+// relationships and does not write the completion marker: the collection
+// stays unresolved until Resolve runs for it (or, after a crash, for a later
+// collection).
+//
+// A loader calls it for its own collection after its person records are
+// committed and before it writes its first relationship, outside any
+// transaction of its own. The relationships are then written pointing at the
+// entities the records ended in (each chunk reads them under the identity
+// lock), so the Resolve at the end of the collection finds nothing to move.
+//
+// One difference from a Resolve batch: a moved record first seen by
+// collectionID has its relationships re-pointed only if the collection has
+// written a relationship already (see resolveBatch). In the place described
+// above it has written none, and that probe of relationship for nothing is
+// most of the early pass's cost on a re-load.
+func (r *Resolver) ResolveRecords(ctx context.Context, collectionID int64) (Result, error) {
+	threshold, err := r.threshold()
+	if err != nil {
+		return Result{}, err
+	}
+	res, err := r.resolveBatches(ctx, collectionID, threshold, true)
+	if err != nil {
+		return res, fmt.Errorf("identity: resolve records of collection %d: %w", collectionID, err)
+	}
+	return res, nil
+}
+
+// resolveCollection resolves the names collectionID touched, then sweeps its
+// relationships and writes its completion marker.
 func (r *Resolver) resolveCollection(ctx context.Context, collectionID int64, threshold int) (Result, error) {
-	var total Result
 	if beforeCollection != nil {
 		if err := beforeCollection(collectionID); err != nil {
-			return total, err
+			return Result{}, err
 		}
 	}
+	total, err := r.resolveBatches(ctx, collectionID, threshold, false)
+	if err != nil {
+		return total, err
+	}
+	return total, r.sweepAndMark(ctx, collectionID)
+}
+
+// resolveBatches walks the names collectionID touched, one transaction per
+// batch. early is true only for ResolveRecords.
+func (r *Resolver) resolveBatches(ctx context.Context, collectionID int64, threshold int, early bool) (Result, error) {
+	var total Result
 	cursor := ""
 	for {
 		var (
@@ -223,7 +266,7 @@ func (r *Resolver) resolveCollection(ctx context.Context, collectionID int64, th
 		)
 		err := retryTx(ctx, r.Pool, func(tx pgx.Tx) error {
 			var err error
-			res, next, err = resolveBatch(ctx, tx, collectionID, cursor, threshold)
+			res, next, err = resolveBatch(ctx, tx, collectionID, cursor, threshold, early)
 			return err
 		})
 		if err != nil {
@@ -234,14 +277,18 @@ func (r *Resolver) resolveCollection(ctx context.Context, collectionID int64, th
 			afterBatch()
 		}
 		if next == "" {
-			break
+			return total, nil
 		}
 		cursor = next
 	}
+}
+
+// sweepAndMark is the end of a collection's Resolve.
+func (r *Resolver) sweepAndMark(ctx context.Context, collectionID int64) error {
 	// Consistency sweep, then the completion marker, in one transaction. The
 	// sweep runs once per collection: a collection already marked was swept,
 	// and its relationships take their entities from the records since then.
-	err := retryTx(ctx, r.Pool, func(tx pgx.Tx) error {
+	return retryTx(ctx, r.Pool, func(tx pgx.Tx) error {
 		if err := LockTx(ctx, tx); err != nil {
 			return err
 		}
@@ -272,12 +319,25 @@ func (r *Resolver) resolveCollection(ctx context.Context, collectionID int64, th
 		}
 		return nil
 	})
-	return total, err
 }
 
 // resolveBatch resolves the next namesPerBatch touched names after cursor and
 // returns the last name it handled, or "" when there were none left.
-func resolveBatch(ctx context.Context, tx pgx.Tx, collectionID int64, cursor string, threshold int) (Result, string, error) {
+//
+// early (ResolveRecords only) leaves out of the re-point the moved records
+// first seen by collectionID, when that collection has written no
+// relationship yet. Only a relationship written after the record exists can
+// cite it, a record is found by its source's key, and loads of one source
+// never overlap (load lock): until the collection that created a record
+// writes its relationships, none cites it. The condition is read here, under
+// the identity lock every relationship chunk takes, so it holds until this
+// batch commits. Records of earlier collections that the batch moves (an old
+// record joining a new one's entity) are re-pointed as always.
+//
+// Resolve never passes early: a loader without an early pass, and a failed
+// collection resolved by a later one, wrote relationships before their
+// records were resolved, and those must follow the records.
+func resolveBatch(ctx context.Context, tx pgx.Tx, collectionID int64, cursor string, threshold int, early bool) (Result, string, error) {
 	var res Result
 	if err := LockTx(ctx, tx); err != nil {
 		return res, "", err
@@ -416,7 +476,22 @@ func resolveBatch(ctx context.Context, tx pgx.Tx, collectionID int64, cursor str
 		Scan(&b[0], &b[1], &b[2], &b[3], &b[4]); err != nil {
 		return res, "", fmt.Errorf("fragment distribution: %w", err)
 	}
-	if err := repoint(ctx, tx, `SELECT id FROM res_move`); err != nil {
+	skipNew := false
+	if early {
+		var wrote bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM relationship WHERE first_collection_id = $1)`,
+			collectionID).Scan(&wrote); err != nil {
+			return res, "", fmt.Errorf("relationships of the collection: %w", err)
+		}
+		skipNew = !wrote
+	}
+	if skipNew {
+		err := repoint(ctx, tx, `SELECT m.id FROM res_move m JOIN person_record n ON n.id = m.id
+			WHERE n.first_collection_id IS DISTINCT FROM $1`, collectionID)
+		if err != nil {
+			return res, "", err
+		}
+	} else if err := repoint(ctx, tx, `SELECT id FROM res_move`); err != nil {
 		return res, "", err
 	}
 	if err := relaxLoneRecords(ctx, tx, `SELECT old_entity FROM res_move WHERE moved`); err != nil {

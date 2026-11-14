@@ -87,9 +87,11 @@ type input struct {
 //     are computed here, never in SQL) and COPY the valid rows into staging;
 //     malformed rows are counted and skipped;
 //  3. ANALYZE staging and, for a slice, keep only the reachable companies;
-//  4. set-based SQL (upsert.go) writes entities, company versions, person
-//     records and relationships with the natural keys of the claims model,
-//     relationships in short per-bucket transactions under the identity lock;
+//  4. set-based SQL (upsert.go) writes entities, company versions and
+//     person records, runs the early identity pass when the context carries
+//     one (connector.ResolveRecordsFrom), and writes the relationships, all
+//     with the natural keys of the claims model, relationships in short
+//     per-bucket transactions under the identity lock;
 //  5. ANALYZE the claim tables it wrote (analyzeClaims).
 func (r *receita) Load(ctx context.Context, col collection.Collection, files []rawstore.File, raw rawstore.Store, pool *pgxpool.Pool) (_ connector.Stats, err error) {
 	if col.SourceID != sourceID {

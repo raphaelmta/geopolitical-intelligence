@@ -26,15 +26,25 @@ const CloseUnseenMinRatio = 0.9
 const ObservedAfter = 3 * 24 * time.Hour
 
 // Pipeline runs collections the way the worker does (cmd/geoint: the hooks of
-// collectionHooks around connector.Collect): Load, then CloseUnseen for a
-// snapshot source, Resolve, Finish, and the search refresh once the
-// collection is done. Only Fetch is replaced: it returns files already put
-// in the raw store.
+// collectionHooks around connector.Collect): Load, with the early identity
+// pass (ResolveRecords) handed to it, then CloseUnseen for a snapshot source,
+// Resolve, Finish, and the search refresh once the collection is done. Both
+// identity passes are the one Resolver, as in the worker. Only Fetch is
+// replaced: it returns files already put in the raw store.
 type Pipeline struct {
 	Pool     *pgxpool.Pool
 	Raw      rawstore.Store
 	Resolver *identity.Resolver
 	Search   *search.Service
+	// NoEarlyResolve leaves the early identity pass out of the hooks: the
+	// order before task 3 of the load optimisation (relationships written
+	// first, everything resolved and re-pointed by Resolve), which loaders
+	// without an early pass still follow.
+	NoEarlyResolve bool
+	// Early and Final hold, per collection id, what the early pass
+	// (ResolveRecords, called by the loader) and the Resolve at the end
+	// reported. A collection is in Early only if its loader ran the pass.
+	Early, Final map[int64]identity.Result
 	// SearchErr is the first error of a search refresh (the Finished hook
 	// cannot fail a collection, as in the worker).
 	SearchErr error
@@ -44,17 +54,35 @@ type Pipeline struct {
 // CommonNameThreshold.
 func NewPipeline(pool *pgxpool.Pool, raw rawstore.Store, threshold int) *Pipeline {
 	return &Pipeline{Pool: pool, Raw: raw, Resolver: &identity.Resolver{Pool: pool, CommonNameThreshold: threshold},
-		Search: search.New(pool)}
+		Search: search.New(pool), Early: map[int64]identity.Result{}, Final: map[int64]identity.Result{}}
 }
 
 // Hooks are the worker's collection hooks over p's services.
 func (p *Pipeline) Hooks() connector.Hooks {
+	h := p.hooks()
+	if p.NoEarlyResolve {
+		h.ResolveRecords = nil
+	}
+	return h
+}
+
+func (p *Pipeline) hooks() connector.Hooks {
 	return connector.Hooks{
+		ResolveRecords: func(ctx context.Context, collectionID int64) error {
+			res, err := p.Resolver.ResolveRecords(ctx, collectionID)
+			if err == nil {
+				p.Early[collectionID] = res
+			}
+			return err
+		},
 		CloseUnseen: func(ctx context.Context, src sources.Source, col collection.Collection) (int64, error) {
 			return claims.NewStore(p.Pool).CloseUnseen(ctx, src, col, CloseUnseenMinRatio)
 		},
 		Resolve: func(ctx context.Context, collectionID int64) error {
-			_, err := p.Resolver.Resolve(ctx, collectionID)
+			res, err := p.Resolver.Resolve(ctx, collectionID)
+			if err == nil {
+				p.Final[collectionID] = res
+			}
 			return err
 		},
 		Finished: func(ctx context.Context, collectionID int64) {

@@ -342,7 +342,8 @@ func personSteps(colID int64, entitySeq uint32) []step {
 }
 
 // upsert runs the set-based phase: candidacies, receipts and parties;
-// candidacy records; receipt conflicts; donors; claims; then one short
+// candidacy records; receipt conflicts; donors; the early identity pass (its
+// own transactions); claims; then one short
 // transaction per relationship bucket. A failure rolls back the current
 // transaction; the earlier ones are complete on their own and the next
 // collection redoes the rest idempotently.
@@ -385,6 +386,9 @@ func upsert(ctx context.Context, pool *pgxpool.Pool, colID int64, stats connecto
 	}, personSteps(colID, entitySeq)...)); err != nil {
 		return err
 	}
+	if err := resolveNewRecords(ctx, pool, colID); err != nil {
+		return err
+	}
 	if err := run(ctx, pool, "claims", stats, []step{
 		{name: "claims candidate_for", sql: sqlClaimsCandidate, args: []any{sourceID}},
 		{name: "claims donated_to", sql: sqlClaimsDonation, args: []any{sourceID}},
@@ -396,6 +400,37 @@ func upsert(ctx context.Context, pool *pgxpool.Pool, colID int64, stats connecto
 		return err
 	}
 	return analyzeClaims(ctx, pool)
+}
+
+// resolveNewRecords runs the early identity pass (connector.ResolveRecordsFrom)
+// after both record phases (candidacies, donors) and before the claims: the
+// new records are merged before any relationship cites them, so each chunk
+// writes its relationships at the final entities (read under the identity
+// lock) and the collection's Resolve has nothing to re-point. Every earlier
+// phase is committed and no transaction is open here; the pass commits batch
+// by batch under the identity lock, like Resolve. A load stopped after it
+// leaves merged records and a failed collection without a completion marker,
+// which the next collection's Resolve completes.
+//
+// The statistics of person_record are refreshed first: the pass joins the
+// records just inserted. Without a pass in the context nothing runs.
+func resolveNewRecords(ctx context.Context, pool *pgxpool.Pool, colID int64) error {
+	resolve := connector.ResolveRecordsFrom(ctx)
+	if resolve == nil {
+		return nil
+	}
+	start := time.Now()
+	if _, err := pool.Exec(ctx, `ANALYZE person_record`); err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("tse: analyze person_record: %w", err)
+		}
+		slog.Warn("tse: analyze failed", "table", "person_record", "error", err)
+	}
+	if err := resolve(ctx, colID); err != nil {
+		return fmt.Errorf("tse: early resolve: %w", err)
+	}
+	slog.Info("tse: load phase done", "phase", "early resolve", "elapsed", since(start))
+	return nil
 }
 
 // claimTables are the big tables a TSE load writes.
